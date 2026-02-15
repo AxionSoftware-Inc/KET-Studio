@@ -1,6 +1,17 @@
 import 'package:flutter/foundation.dart';
 
-enum VizType { bloch, matrix, chart, quantum, circuit, image, none }
+enum VizType {
+  bloch,
+  matrix,
+  chart,
+  quantum,
+  circuit,
+  image,
+  table,
+  text,
+  heatmap,
+  none,
+}
 
 class VizData {
   final VizType type;

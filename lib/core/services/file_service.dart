@@ -53,7 +53,9 @@ class FileService extends ChangeNotifier {
       final dir = Directory(path);
       final List<FileSystemEntity> entities = dir.listSync().where((e) {
         final name = e.path.split(Platform.pathSeparator).last;
-        return !name.startsWith(".ket_");
+        return !name.startsWith(".ket_") &&
+            name != "ket_viz.py" &&
+            name != "ketviz.py";
       }).toList();
 
       entities.sort((a, b) {

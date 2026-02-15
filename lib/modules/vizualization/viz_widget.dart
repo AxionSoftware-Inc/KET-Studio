@@ -66,7 +66,7 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              "IDE Qiskit natijalarini (IMAGE, BLOCH, __DATA__) avtomatik aniqlaydi.",
+              "IDE Qiskit natijalarini (IMAGE, BLOCH, KET_VIZ) avtomatik aniqlaydi.",
               textAlign: TextAlign.center,
               style: TextStyle(color: KetTheme.textMuted, fontSize: 10),
             ),
@@ -116,33 +116,123 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
       case VizType.image:
       case VizType.circuit:
         return FluentIcons.picture;
+      case VizType.table:
+        return FluentIcons.table_group;
+      case VizType.text:
+        return FluentIcons.text_document;
+      case VizType.heatmap:
+        return FluentIcons.iot;
       default:
         return FluentIcons.info;
     }
   }
 
   Widget _buildVizContent(VizData viz) {
+    final payload = viz.data;
     switch (viz.type) {
       case VizType.bloch:
-        return _BlochSpherePainter(data: viz.data);
+        return _BlochSpherePainter(data: payload);
       case VizType.matrix:
-        return _MatrixHeatmap(data: viz.data);
+        return _MatrixHeatmap(data: payload);
       case VizType.chart:
-        return _SimpleChart(data: viz.data);
+        return _SimpleChart(data: payload);
       case VizType.quantum:
-        return _QuantumDashboard(data: viz.data);
+        return _QuantumDashboard(data: payload);
       case VizType.image:
       case VizType.circuit:
-        return _ImageDisplay(path: viz.data.toString());
+        return _ImageDisplay(
+          path: payload is Map
+              ? (payload['path'] ?? "").toString()
+              : payload.toString(),
+          title: payload is Map ? (payload['title'] ?? "").toString() : null,
+        );
+      case VizType.table:
+        return _TableDisplay(data: payload);
+      case VizType.text:
+        return _TextDisplay(data: payload);
+      case VizType.heatmap:
+        return _MatrixHeatmap(data: payload);
       default:
         return const Text("Unknown Visualization");
     }
   }
 }
 
+class _TableDisplay extends StatelessWidget {
+  final dynamic data;
+  const _TableDisplay({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = data?['title'] ?? "Data Table";
+    final rows = data?['rows'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SubHeader(title: title.toString().toUpperCase()),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.builder(
+            itemCount: rows.length,
+            itemBuilder: (context, index) {
+              final row = rows[index] as List;
+              return Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: row
+                      .map(
+                        (cell) => Text(
+                          cell.toString(),
+                          style: const TextStyle(
+                            color: KetTheme.textMain,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TextDisplay extends StatelessWidget {
+  final dynamic data;
+  const _TextDisplay({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = data?['content'] ?? data?['text'] ?? data.toString();
+    return SingleChildScrollView(
+      child: Text(
+        text.toString(),
+        style: const TextStyle(
+          color: KetTheme.textMain,
+          fontSize: 13,
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+}
+
 class _ImageDisplay extends StatelessWidget {
   final String path;
-  const _ImageDisplay({required this.path});
+  final String? title;
+  const _ImageDisplay({required this.path, this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -158,20 +248,36 @@ class _ImageDisplay extends StatelessWidget {
 
     return Column(
       children: [
+        if (title != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              title!,
+              style: const TextStyle(
+                color: KetTheme.textMain,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
         Expanded(
           child: InteractiveViewer(
             child: Image.file(
               file,
               fit: BoxFit.contain,
-              // Cache-tagini o'chirib yangi rasmni ko'ramiz
-              key: ValueKey(file.lastModifiedSync()),
+              key: ValueKey(
+                path +
+                    (file.existsSync()
+                        ? file.lastModifiedSync().toString()
+                        : ""),
+              ),
             ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          path.split(Platform.pathSeparator).last,
-          style: const TextStyle(color: Colors.grey, fontSize: 10),
+          path.replaceAll(r'\', '/').split('/').last,
+          style: const TextStyle(color: Color(0xFF808080), fontSize: 10),
         ),
       ],
     );
