@@ -5,9 +5,9 @@ class LayoutService extends ChangeNotifier {
   factory LayoutService() => _instance;
   LayoutService._internal();
 
-  String? _activeLeftPanelId; // Boshida hech narsa ochiq emas
-  String? _activeRightPanelId;
-  bool _isBottomPanelVisible = false;
+  String? _activeLeftPanelId = 'explorer';
+  String? _activeRightPanelId = 'vizualization';
+  bool _isBottomPanelVisible = true;
 
   String? get activeLeftPanelId => _activeLeftPanelId;
   String? get activeRightPanelId => _activeRightPanelId;

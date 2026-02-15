@@ -1,7 +1,8 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/services/file_service.dart';
 import '../../core/services/editor_service.dart';
+import '../../core/theme/ket_theme.dart';
 import 'explorer_logic.dart';
 
 class ExplorerWidget extends StatefulWidget {
@@ -12,171 +13,238 @@ class ExplorerWidget extends StatefulWidget {
 }
 
 class _ExplorerWidgetState extends State<ExplorerWidget> {
-  String? _currentProjectPath; // Tanlangan loyiha yo'li
-  List<FileSystemEntity> _files = []; // Fayllar ro'yxati
-
-  // --- ACTIONS ---
-
-  void _openProject() async {
-    final path = await FileService.pickDirectory();
-    if (path != null) {
-      setState(() {
-        _currentProjectPath = path;
-        _refreshFiles();
-      });
-    }
+  @override
+  void initState() {
+    super.initState();
+    FileService().addListener(_onFileServiceChanged);
   }
 
-  void _refreshFiles() {
-    if (_currentProjectPath != null) {
-      setState(() {
-        _files = FileService.getFiles(_currentProjectPath!);
-      });
-    }
+  @override
+  void dispose() {
+    FileService().removeListener(_onFileServiceChanged);
+    super.dispose();
   }
 
-  // Faylni bosganda Editorga xabar berish
-  void _onFileClick(File file) async {
-    try {
-      String content = await FileService.readFile(file.path);
-      String name = file.path.split(Platform.pathSeparator).last;
-
-      // Editor Service orqali faylni ochamiz
-      EditorService().openFile(name, content);
-    } catch (e) {
-      // Agar rasm yoki binary fayl bo'lsa ochmaymiz
-      print("Faylni o'qib bo'lmadi: $e");
-    }
+  void _onFileServiceChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    // 1. Agar loyiha ochilmagan bo'lsa
-    if (_currentProjectPath == null) {
-      return Center(
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF238636), // GitHub Green Button
-            foregroundColor: Colors.white,
-          ),
-          onPressed: _openProject,
-          icon: const Icon(Icons.folder_open, size: 16),
-          label: const Text("Open Folder"),
-        ),
-      );
-    }
-
-    // 2. Loyiha ochiq bo'lsa - Daraxtni chizamiz
+    final rootPath = FileService().rootPath;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Loyiha nomi (Header)
+        // Header
         Container(
-          padding: const EdgeInsets.all(10),
-          width: double.infinity,
-          color: const Color(0xFF161B22),
+          height: 35,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.centerLeft,
+          color: KetTheme.bgHeader,
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.keyboard_arrow_down, size: 16, color: Colors.white70),
-              const SizedBox(width: 5),
-              Text(
-                _currentProjectPath!.split(Platform.pathSeparator).last.toUpperCase(),
-                style: const TextStyle(
-                    color: Colors.white,
+              Expanded(
+                child: Text(
+                  "EXPLORER: ${rootPath.split(Platform.pathSeparator).last.toUpperCase()}",
+                  style: const TextStyle(
+                    color: KetTheme.textMain,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    fontSize: 12
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(FluentIcons.add_notes, size: 14),
+                    onPressed: () => ExplorerLogic.showNameDialog(
+                      context,
+                      rootPath,
+                      isFile: true,
+                      onDone: () => setState(() {}),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(FluentIcons.folder_horizontal, size: 14),
+                    onPressed: () => ExplorerLogic.showNameDialog(
+                      context,
+                      rootPath,
+                      isFile: false,
+                      onDone: () => setState(() {}),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(FluentIcons.refresh, size: 14),
+                    onPressed: () => setState(() {}),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-
-        // Fayllar ro'yxati (Recursiv widget)
+        // Recursive Tree
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: _files.map((entity) => _buildNode(entity)).toList(),
+          child: SingleChildScrollView(
+            child: FileTreeItem(
+              key: ValueKey(rootPath),
+              path: rootPath,
+              isRoot: true,
+              level: 0,
+            ),
           ),
         ),
       ],
     );
   }
+}
 
-  // --- REKURSIV DARAXT YASOVCHI ---
-  Widget _buildNode(FileSystemEntity entity) {
-    final name = entity.path.split(Platform.pathSeparator).last;
-    if (name.startsWith('.')) return const SizedBox.shrink();
+class FileTreeItem extends StatefulWidget {
+  final String path;
+  final bool isRoot;
+  final int level;
 
-    bool isFile = entity is File;
+  const FileTreeItem({
+    super.key,
+    required this.path,
+    this.isRoot = false,
+    required this.level,
+  });
 
-    // --- UI QISMI ---
-    return GestureDetector(
-      // 1. CHAP TUGMA (Oddiy ochish)
-      onTap: () {
-        if (isFile) {
-          _onFileClick(entity as File);
-        } else {
-          // Papka bo'lsa ExpansionTile o'zi ochiladi, shuning uchun bu yer bo'sh qolishi mumkin
-          // yoki maxsus logika yozish mumkin.
-          // Lekin ExpansionTile ishlatayotganimiz uchun onTap conflict bo'lishi mumkin.
-          // Keling, eng oson yo'li: Fayl uchun alohida, Papka uchun alohida qilamiz.
-        }
-      },
+  @override
+  State<FileTreeItem> createState() => _FileTreeItemState();
+}
 
-      // 2. O'NG TUGMA (MENU CHIQARISH)
-      onSecondaryTapDown: (details) {
-        ExplorerLogic.showContextMenu(
-            context,
-            entity.path,
-            details.globalPosition,
-            _refreshFiles // Menu yopilgandan keyin yangilash uchun
-        );
-      },
+class _FileTreeItemState extends State<FileTreeItem> {
+  bool _isExpanded = false;
+  List<FileSystemEntity> _children = [];
+  final FlyoutController _flyoutController = FlyoutController();
 
-      child: isFile
-          ? _buildFileItem(name, entity as File)
-          : _buildFolderItem(name, entity as Directory),
-    );
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isRoot) _isExpanded = true;
+    _loadChildren();
   }
 
-  // FAYL UI (Alohida qildim, toza bo'lishi uchun)
-  Widget _buildFileItem(String name, File file) {
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.only(left: 30), // Indent
-      color: Colors.transparent, // Click sezishi uchun
-      child: Row(
-        children: [
-          _getFileIcon(name),
-          const SizedBox(width: 8),
-          Text(name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-        ],
-      ),
-    );
+  @override
+  void dispose() {
+    _flyoutController.dispose();
+    super.dispose();
   }
 
-  // PAPKA UI
-  Widget _buildFolderItem(String name, Directory dir) {
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-        dense: true,
-        minTileHeight: 30,
-        leading: const Icon(Icons.folder, size: 16, color: Colors.amber),
-        title: Text(name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-        trailing: const SizedBox(),
-        children: FileService.getFiles(dir.path)
-            .map((child) => _buildNode(child)) // Rekursiya
+  void _loadChildren() {
+    if (FileSystemEntity.isDirectorySync(widget.path)) {
+      _children = FileService().getFiles(widget.path);
+    }
+  }
+
+  void _toggle() {
+    setState(() {
+      _isExpanded = !_isExpanded;
+      if (_isExpanded) _loadChildren();
+    });
+  }
+
+  void _onTap() async {
+    if (FileSystemEntity.isDirectorySync(widget.path)) {
+      _toggle();
+    } else {
+      try {
+        final content = await FileService().readFile(widget.path);
+        final name = widget.path.split(Platform.pathSeparator).last;
+        EditorService().openFile(name, content, realPath: widget.path);
+      } catch (e) {
+        debugPrint("Error reading file: $e");
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isRoot && widget.level == 0) {
+      // Don't show the root folder itself, just its children
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _children
+            .map((e) => FileTreeItem(path: e.path, level: widget.level + 1))
             .toList(),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _getFileIcon(String filename) {
-    if (filename.endsWith('.py')) return const Icon(Icons.data_object, size: 16, color: Colors.blueAccent);
-    if (filename.endsWith('.dart')) return const Icon(Icons.flutter_dash, size: 16, color: Colors.blue);
-    if (filename.endsWith('.json')) return const Icon(Icons.javascript, size: 16, color: Colors.yellow);
-    return const Icon(Icons.insert_drive_file_outlined, size: 16, color: Colors.grey);
+    final name = widget.path.split(Platform.pathSeparator).last;
+    final isDirectory = FileSystemEntity.isDirectorySync(widget.path);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FlyoutTarget(
+          controller: _flyoutController,
+          child: GestureDetector(
+            onSecondaryTap: () {
+              ExplorerLogic.showContextMenu(
+                context,
+                widget.path,
+                _flyoutController,
+                () => setState(() => _loadChildren()),
+              );
+            },
+            child: HoverButton(
+              onPressed: _onTap,
+              builder: (context, states) {
+                return Container(
+                  padding: EdgeInsets.only(left: 12.0 * widget.level, right: 8),
+                  height: 28,
+                  color: states.isHovered
+                      ? Colors.white.withValues(alpha: 0.05)
+                      : Colors.transparent,
+                  child: Row(
+                    children: [
+                      Icon(
+                        isDirectory
+                            ? (_isExpanded
+                                  ? FluentIcons.chevron_down
+                                  : FluentIcons.chevron_right)
+                            : FluentIcons.page_list,
+                        size: isDirectory ? 8 : 14,
+                        color: isDirectory
+                            ? Colors.grey
+                            : const Color(0xFF599E5E),
+                      ),
+                      const SizedBox(width: 6),
+                      if (isDirectory)
+                        const Icon(
+                          FluentIcons.folder_horizontal,
+                          size: 14,
+                          color: Color(0xFFDCB67A),
+                        ),
+                      if (isDirectory) const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            color: KetTheme.textMain,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        if (isDirectory && _isExpanded)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _children
+                .map((e) => FileTreeItem(path: e.path, level: widget.level + 1))
+                .toList(),
+          ),
+      ],
+    );
   }
 }

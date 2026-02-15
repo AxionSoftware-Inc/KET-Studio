@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/plugin/plugin_system.dart';
 import 'explorer_widget.dart'; // <--- Import qiling
 
@@ -7,7 +7,7 @@ class ExplorerPlugin implements ISidePanel {
   String get id => 'explorer';
 
   @override
-  IconData get icon => Icons.file_copy_outlined;
+  IconData get icon => FluentIcons.fabric_folder_search;
 
   @override
   String get title => 'Explorer';

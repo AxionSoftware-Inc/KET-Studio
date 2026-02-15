@@ -12,7 +12,7 @@ class EditorService extends ChangeNotifier {
   EditorService._internal();
 
   // STATE
-  List<EditorFile> _files = [];
+  final List<EditorFile> _files = [];
   int _activeFileIndex = -1;
 
   // GETTERS
@@ -84,14 +84,43 @@ class EditorService extends ChangeNotifier {
     if (!file.path.startsWith('/fake')) {
       try {
         final diskFile = File(file.path);
-        // CodeControllerdagi matnni diskka yozamiz
         await diskFile.writeAsString(file.controller.text);
-        print("Muvaffaqiyatli saqlandi: ${file.path}");
+        debugPrint("Muvaffaqiyatli saqlandi: ${file.path}");
       } catch (e) {
-        print("Saqlashda xato: $e");
+        debugPrint("Saqlashda xato: $e");
       }
     } else {
-      print("Bu yangi fayl, uni hali diskka saqlab bo'lmaydi (Save As kerak).");
+      debugPrint(
+        "Bu yangi fayl, uni hali diskka saqlab bo'lmaydi (Save As kerak).",
+      );
+    }
+  }
+
+  // 5. RENAME FILE (Tab nomini yangilash uchun)
+  void renameFile(String oldPath, String newPath) {
+    final index = _files.indexWhere((f) => f.path == oldPath);
+    if (index != -1) {
+      final newName = newPath.split(Platform.pathSeparator).last;
+      _files[index] = EditorFile(
+        path: newPath,
+        name: newName,
+        extension: newName.split('.').last,
+        controller: _files[index].controller,
+      );
+      notifyListeners();
+    }
+  }
+
+  // 6. SAVE ALL
+  Future<void> saveAll() async {
+    for (var file in _files) {
+      if (!file.path.startsWith('/fake')) {
+        try {
+          await File(file.path).writeAsString(file.controller.text);
+        } catch (e) {
+          debugPrint("Save error: $e");
+        }
+      }
     }
   }
 }

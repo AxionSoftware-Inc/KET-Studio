@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:code_text_field/code_text_field.dart';
 import 'package:flutter_highlight/themes/monokai-sublime.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/services/editor_service.dart';
+import '../../core/theme/ket_theme.dart';
 
 class EditorWidget extends StatefulWidget {
   const EditorWidget({super.key});
@@ -19,9 +20,11 @@ class _EditorWidgetState extends State<EditorWidget> {
     super.initState();
     _editorService.addListener(_update);
 
-    // Test uchun boshlanishiga bitta fayl ochib qo'yamiz
     if (_editorService.files.isEmpty) {
-      _editorService.openFile("main.py", "print('Salom, Ket Studio!')\n\n# Kodingizni shu yerga yozing...");
+      _editorService.openFile(
+        "main.py",
+        "print('Salom, Ket Studio!')\n\n# Kodingizni shu yerga yozing...",
+      );
     }
   }
 
@@ -35,17 +38,25 @@ class _EditorWidgetState extends State<EditorWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Agar fayl yo'q bo'lsa (Empty State)
     if (_editorService.files.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.rocket_launch, size: 60, color: Colors.white.withOpacity(0.1)),
+            Icon(
+              FluentIcons.code,
+              size: 60,
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
             const SizedBox(height: 20),
-            Text("Fayl ochish uchun Explorer'dan tanlang\nyoki Ctrl+N bosing",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withOpacity(0.2))),
+            Text(
+              "Fayl ochish uchun Explorer'dan tanlang\nyoki Ctrl+N bosing",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.2),
+                fontSize: 13,
+              ),
+            ),
           ],
         ),
       );
@@ -55,10 +66,10 @@ class _EditorWidgetState extends State<EditorWidget> {
 
     return Column(
       children: [
-        // A. TAB BAR (Fayllar qatori)
+        // A. TAB BAR
         Container(
           height: 35,
-          color: const Color(0xFF161B22), // Panel foni
+          color: KetTheme.bgActivityBar,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: _editorService.files.length,
@@ -66,54 +77,62 @@ class _EditorWidgetState extends State<EditorWidget> {
               final file = _editorService.files[index];
               final isActive = index == _editorService.activeFileIndex;
 
-              return InkWell(
-                onTap: () => _editorService.setActiveIndex(index),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  // Aktiv tab ajralib turadi
-                  decoration: BoxDecoration(
-                    color: isActive ? const Color(0xFF0D1117) : Colors.transparent, // Aktiv bo'lsa Editor foni bilan bir xil
-                    border: isActive
-                        ? const Border(top: BorderSide(color: Color(0xFF58A6FF), width: 2))
-                        : null,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        file.name.endsWith('.py') ? Icons.data_object : Icons.description,
-                        size: 14,
-                        color: isActive ? Colors.white : Colors.grey,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(file.name, style: TextStyle(
+              return HoverButton(
+                onPressed: () => _editorService.setActiveIndex(index),
+                builder: (context, states) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: states.isHovered
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.transparent,
+                      border: isActive
+                          ? const Border(
+                              top: BorderSide(color: KetTheme.accent, width: 2),
+                            )
+                          : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          file.name.endsWith('.py')
+                              ? FluentIcons.code
+                              : FluentIcons.page_list,
+                          size: 14,
                           color: isActive ? Colors.white : Colors.grey,
-                          fontSize: 12
-                      )),
-                      const SizedBox(width: 8),
-                      // Yopish tugmasi
-                      InkWell(
-                        onTap: () => _editorService.closeFile(index),
-                        borderRadius: BorderRadius.circular(10),
-                        child: const Icon(Icons.close, size: 14, color: Colors.white54),
-                      )
-                    ],
-                  ),
-                ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          file.name,
+                          style: TextStyle(
+                            color: isActive ? Colors.white : Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          icon: const Icon(FluentIcons.chrome_close, size: 10),
+                          onPressed: () => _editorService.closeFile(index),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               );
             },
           ),
         ),
 
-        // B. KOD MAYDONI (Code Editor)
+        // B. KOD MAYDONI
         Expanded(
           child: CodeTheme(
-            data: CodeThemeData(styles: monokaiSublimeTheme), // VS Code Dark Theme
+            data: CodeThemeData(styles: monokaiSublimeTheme),
             child: CodeField(
               controller: activeFile.controller,
-              textStyle: GoogleFonts.jetBrainsMono(fontSize: 14), // Maxsus kod shrifti
+              textStyle: GoogleFonts.jetBrainsMono(fontSize: 14),
               expands: true,
-              wrap: false, // Kodni pastga tushirmaslik (scroll bo'ladi)
-              background: const Color(0xFF0D1117), // Editor foni
+              wrap: false,
+              background: KetTheme.bgCanvas,
             ),
           ),
         ),

@@ -1,33 +1,34 @@
-import 'package:flutter/material.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 
 class KetTheme {
   // --- PROFESSIONAL PALITRA (VS CODE STYLE) ---
 
   // Asosiy fonlar
-  static const Color bgCanvas = Color(0xFF1E1E1E);      // Editor foni
-  static const Color bgSidebar = Color(0xFF252526);     // Yon panel foni
-  static const Color bgActivityBar = Color(0xFF333333); // Eng chap panel
-  static const Color bgHeader = Color(0xFF2D2D2D);      // Sarlavhalar foni (Tablar)
+  // Asosiy fonlar (Windows 11 Mica-like)
+  static const Color bgCanvas = Color(0xFF1B1B1C);
+  static const Color bgSidebar = Color(0xFF202021);
+  static const Color bgActivityBar = Color(0xFF181818);
+  static const Color bgHeader = Color(0xFF252526);
 
-  // Chegaralar (Juda nozik)
-  static const Color border = Color(0xFF1E1E1E);        // Ajratuvchi chiziqlar
+  // Chegaralar
+  static const Color border = Color(0xFF2B2B2C);
 
   // Matnlar
-  static const Color textMain = Color(0xFFCCCCCC);      // Asosiy oqish matn
-  static const Color textMuted = Color(0xFF969696);     // Xira matn
+  static const Color textMain = Color(0xFFE0E0E0);
+  static const Color textMuted = Color(0xFF8B8B8B);
 
-  // Akcent (Faqat muhim joylar uchun)
-  static const Color accent = Color(0xFF007ACC);        // VS Code Blue (yoki o'zingiz istagan rang)
-  static const Color selection = Color(0xFF264F78);     // Tanlangan qator foni
+  // Akcent
+  static const Color accent = Color(0xFF9C27B0);
+  static const Color selection = Color(0xFF3E3E42);
 
   // --- STYLES ---
-
-  // Oddiy tekis chiziq (Headerlar ostiga)
-  static Border sideBorder = const Border(
-    right: BorderSide(color: Colors.black, width: 1),
+  static const EdgeInsets panelPadding = EdgeInsets.symmetric(
+    horizontal: 12,
+    vertical: 8,
   );
 
-  static Border bottomBorder = const Border(
-    bottom: BorderSide(color: Colors.black, width: 1),
+  static Decoration sidebarDecoration = const BoxDecoration(
+    color: bgSidebar,
+    border: Border(right: BorderSide(color: Colors.black, width: 0.5)),
   );
 }

@@ -1,46 +1,67 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/services/file_service.dart';
+import '../../core/services/editor_service.dart';
 
 class ExplorerLogic {
+  static void showContextMenu(
+    BuildContext context,
+    String path,
+    FlyoutController controller,
+    VoidCallback onRefresh,
+  ) {
+    bool isDirectory = FileSystemEntity.isDirectorySync(path);
 
-  // O'ng tugma menyusi (Context Menu)
-  static void showContextMenu(BuildContext context, String path, Offset position, VoidCallback onRefresh) {
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
-      color: const Color(0xFF252526),
-      // MANA SHU YERDA TIPLARNI TO'G'RILADIK:
-      items: <PopupMenuEntry<dynamic>>[
-        _buildMenuItem("New File", Icons.insert_drive_file, () => _showNameDialog(context, path, isFile: true, onDone: onRefresh)),
-        _buildMenuItem("New Folder", Icons.folder, () => _showNameDialog(context, path, isFile: false, onDone: onRefresh)),
-        const PopupMenuDivider(height: 10), // Chiziq
-        _buildMenuItem("Rename", Icons.edit, () => _showRenameDialog(context, path, onDone: onRefresh)),
-        _buildMenuItem("Delete", Icons.delete, () => _deleteItem(context, path, onRefresh)),
-      ],
+    controller.showFlyout(
+      builder: (context) {
+        return MenuFlyout(
+          items: [
+            if (isDirectory) ...[
+              MenuFlyoutItem(
+                leading: const Icon(FluentIcons.page_add, size: 14),
+                text: const Text('New File'),
+                onPressed: () => showNameDialog(
+                  context,
+                  path,
+                  isFile: true,
+                  onDone: onRefresh,
+                ),
+              ),
+              MenuFlyoutItem(
+                leading: const Icon(FluentIcons.folder_horizontal, size: 14),
+                text: const Text('New Folder'),
+                onPressed: () => showNameDialog(
+                  context,
+                  path,
+                  isFile: false,
+                  onDone: onRefresh,
+                ),
+              ),
+              const MenuFlyoutSeparator(),
+            ],
+            MenuFlyoutItem(
+              leading: const Icon(FluentIcons.edit, size: 14),
+              text: const Text('Rename'),
+              onPressed: () =>
+                  showRenameDialog(context, path, onDone: onRefresh),
+            ),
+            MenuFlyoutItem(
+              leading: const Icon(FluentIcons.delete, size: 14),
+              text: const Text('Delete'),
+              onPressed: () => deleteItem(context, path, onRefresh),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // Menyu elementi shabloni
-  static PopupMenuItem<dynamic> _buildMenuItem(String title, IconData icon, VoidCallback onTap) {
-    return PopupMenuItem(
-      onTap: onTap,
-      height: 32,
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.white70),
-          const SizedBox(width: 10),
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-
-  // --- DIALOGLAR ---
-
-  // 1. Yangi narsa yaratish dialogi
-  static void _showNameDialog(BuildContext context, String parentPath, {required bool isFile, required VoidCallback onDone}) {
-    // Agar fayl ustiga bosilgan bo'lsa, uning ota papkasini olamiz
+  static void showNameDialog(
+    BuildContext context,
+    String parentPath, {
+    required bool isFile,
+    required VoidCallback onDone,
+  }) {
     if (FileSystemEntity.isFileSync(parentPath)) {
       parentPath = File(parentPath).parent.path;
     }
@@ -49,38 +70,33 @@ class ExplorerLogic {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF252526),
-        title: Text(isFile ? "New File" : "New Folder", style: const TextStyle(color: Colors.white, fontSize: 14)),
-        content: TextField(
+      builder: (context) => ContentDialog(
+        title: Text(isFile ? "New File" : "New Folder"),
+        content: TextBox(
           controller: controller,
-          style: const TextStyle(color: Colors.white),
+          placeholder: "Enter name...",
           autofocus: true,
-          cursorColor: Colors.blue,
-          decoration: const InputDecoration(
-            hintText: "Enter name...",
-            hintStyle: TextStyle(color: Colors.white30),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
-          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
+          Button(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
             onPressed: () async {
               final name = controller.text.trim();
               if (name.isNotEmpty) {
                 final fullPath = "$parentPath${Platform.pathSeparator}$name";
                 try {
                   if (isFile) {
-                    await FileService.createFile(fullPath);
+                    await FileService().createFile(fullPath);
                   } else {
-                    await FileService.createFolder(fullPath);
+                    await FileService().createFolder(fullPath);
                   }
                   onDone();
-                  Navigator.pop(context);
+                  if (context.mounted) Navigator.pop(context);
                 } catch (e) {
-                  print("Error creating: $e");
+                  debugPrint("Error creating: $e");
                 }
               }
             },
@@ -91,33 +107,40 @@ class ExplorerLogic {
     );
   }
 
-  // 2. Rename Dialog
-  static void _showRenameDialog(BuildContext context, String oldPath, {required VoidCallback onDone}) {
+  static void showRenameDialog(
+    BuildContext context,
+    String oldPath, {
+    required VoidCallback onDone,
+  }) {
     final oldName = oldPath.split(Platform.pathSeparator).last;
     final controller = TextEditingController(text: oldName);
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF252526),
-        title: const Text("Rename", style: TextStyle(color: Colors.white, fontSize: 14)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          autofocus: true,
-          decoration: const InputDecoration(enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue))),
-        ),
+      builder: (context) => ContentDialog(
+        title: const Text("Rename"),
+        content: TextBox(controller: controller, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
+          Button(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
             onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
                 try {
-                  await FileService.renameEntity(oldPath, controller.text.trim());
+                  final parentPath = File(oldPath).parent.path;
+                  final newPath =
+                      "$parentPath${Platform.pathSeparator}$newName";
+
+                  await FileService().renameEntity(oldPath, newName);
+                  EditorService().renameFile(oldPath, newPath);
+
                   onDone();
-                  Navigator.pop(context);
+                  if (context.mounted) Navigator.pop(context);
                 } catch (e) {
-                  print("Rename error: $e");
+                  debugPrint("Rename error: $e");
                 }
               }
             },
@@ -128,13 +151,21 @@ class ExplorerLogic {
     );
   }
 
-  // 3. Delete Logic
-  static void _deleteItem(BuildContext context, String path, VoidCallback onDone) async {
+  static void deleteItem(
+    BuildContext context,
+    String path,
+    VoidCallback onDone,
+  ) async {
     try {
-      await FileService.deleteEntity(path);
+      // Agar ochiq bo'lsa yopamiz
+      final editor = EditorService();
+      final index = editor.files.indexWhere((f) => f.path == path);
+      if (index != -1) editor.closeFile(index);
+
+      await FileService().deleteEntity(path);
       onDone();
     } catch (e) {
-      print("Delete error: $e");
+      debugPrint("Delete error: $e");
     }
   }
 }

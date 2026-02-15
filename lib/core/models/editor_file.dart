@@ -1,5 +1,4 @@
 import 'package:code_text_field/code_text_field.dart';
-import 'package:flutter/material.dart';
 
 class EditorFile {
   final String path;          // Fayl manzili (C:/projects/main.py)

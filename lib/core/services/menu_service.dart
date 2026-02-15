@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 
 // 1. Menyu Elementi Modeli
 class MenuItemData {
-  final String label;         // Masalan: "New File"
-  final IconData? icon;       // Masalan: Icons.add
-  final VoidCallback onTap;   // Bosilganda nima bo'lishi
-  final String? shortcut;     // Masalan: "Ctrl+N"
+  final String label; // Masalan: "New File"
+  final IconData? icon; // Masalan: Icons.add
+  final VoidCallback? onTap; // Bosilganda nima bo'lishi
+  final String? shortcut; // Masalan: "Ctrl+N"
+  final bool isSeparator;
 
   MenuItemData({
-    required this.label,
-    required this.onTap,
+    this.label = "",
+    this.onTap,
     this.icon,
     this.shortcut,
+    this.isSeparator = false,
   });
+
+  static MenuItemData separator() => MenuItemData(isSeparator: true);
 }
 
 // 2. Menyu Guruhi (File, Edit, View...)
