@@ -318,54 +318,56 @@ class ActivityBar extends StatelessWidget {
     if (panels.isEmpty) return const SizedBox();
 
     return Container(
-      width: 48,
+      width: 48, // Compact width
       decoration: BoxDecoration(
         color: KetTheme.bgActivityBar,
         border: Border(
           right: isLeft
-              ? BorderSide(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  width: 0.5,
-                )
+              ? BorderSide(color: Colors.black.withValues(alpha: 0.2), width: 1)
               : BorderSide.none,
           left: !isLeft
-              ? BorderSide(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  width: 0.5,
-                )
+              ? BorderSide(color: Colors.black.withValues(alpha: 0.2), width: 1)
               : BorderSide.none,
         ),
       ),
       child: Column(
         children: [
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           ...panels.map((panel) {
             bool isActive = isLeft
                 ? layout.activeLeftPanelId == panel.id
                 : layout.activeRightPanelId == panel.id;
 
-            return Stack(
-              alignment: isLeft ? Alignment.centerLeft : Alignment.centerRight,
-              children: [
-                if (isActive)
-                  Container(width: 2, height: 24, color: KetTheme.accent),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Tooltip(
-                    message: panel.title,
-                    child: IconButton(
-                      icon: Icon(
-                        panel.icon,
-                        color: isActive ? Colors.white : KetTheme.textMuted,
-                        size: 22,
+            return SizedBox(
+              height: 48,
+              width: 48,
+              child: Stack(
+                alignment: isLeft
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                children: [
+                  if (isActive)
+                    Container(width: 2, height: 28, color: KetTheme.accent),
+                  Center(
+                    child: Tooltip(
+                      message: panel.title,
+                      child: IconButton(
+                        icon: Icon(
+                          panel.icon,
+                          color: isActive ? Colors.white : KetTheme.textMuted,
+                          size: 18, // Professional VS Code-like size
+                        ),
+                        onPressed: () => isLeft
+                            ? layout.toggleLeftPanel(panel.id)
+                            : layout.toggleRightPanel(panel.id),
+                        style: ButtonStyle(
+                          padding: WidgetStateProperty.all(EdgeInsets.zero),
+                        ),
                       ),
-                      onPressed: () => isLeft
-                          ? layout.toggleLeftPanel(panel.id)
-                          : layout.toggleRightPanel(panel.id),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             );
           }),
         ],

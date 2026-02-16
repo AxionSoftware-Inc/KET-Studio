@@ -24,6 +24,8 @@ class ExecutionService {
 
     try {
       isRunning.value = true;
+      final sessionId = "v_${DateTime.now().millisecondsSinceEpoch}";
+      VizService().startSession(sessionId);
 
       // 1. CREATE LAUNCHER AND HELPER LIBRARY
       final projectDir = Directory(
@@ -140,9 +142,9 @@ except Exception as e:
           terminal.write(
             "❌ Error: Python not found. Please install Python and add it to PATH.",
           );
-          VizService().updateData(
-            VizType.error,
-            "Python not found. Please check your system PATH.",
+          VizService().endSession(
+            exitCode: 1,
+            error: "Python not found. Please check your system PATH.",
           );
           isRunning.value = false;
           return;
@@ -224,7 +226,7 @@ except Exception as e:
             try {
               final jsonStr = trimmed.substring(9).trim();
               final data = jsonDecode(jsonStr);
-              VizService().updateData(VizType.quantum, data);
+              VizService().updateData(VizType.dashboard, data);
             } catch (e) {
               debugPrint("__DATA__ Parse Error: $e");
             }
@@ -282,7 +284,9 @@ except Exception as e:
               } else if (map.containsKey('final_counts') ||
                   map.containsKey('counts')) {
                 final counts = map['final_counts'] ?? map['counts'];
-                VizService().updateData(VizType.quantum, {"histogram": counts});
+                VizService().updateData(VizType.dashboard, {
+                  "histogram": counts,
+                });
               } else {
                 // If it's a generic JSON we don't know, just print it as text
                 terminal.write(trimmed);
@@ -306,7 +310,9 @@ except Exception as e:
 
       final exitCode = await _process!.exitCode;
       if (exitCode != 0 && stderrBuffer.isNotEmpty) {
-        VizService().updateData(VizType.error, stderrBuffer);
+        VizService().endSession(exitCode: exitCode, error: stderrBuffer);
+      } else {
+        VizService().endSession(exitCode: exitCode);
       }
       terminal.write("----------------------------------------");
       terminal.write("Process finished with exit code $exitCode");
@@ -315,7 +321,7 @@ except Exception as e:
       isRunning.value = false;
     } catch (e) {
       terminal.write("⚠️ System Error: $e");
-      VizService().updateData(VizType.error, e.toString());
+      VizService().endSession(exitCode: 1, error: e.toString());
       isRunning.value = false;
     }
   }

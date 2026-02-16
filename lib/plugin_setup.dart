@@ -10,6 +10,7 @@ void setupPlugins() {
 
   registry.register(ExplorerPlugin());
   registry.register(VisualizationPlugin());
+  registry.register(VizHistoryPlugin()); // New History plugin added
 
   // 3. kelajakda...
   // registry.register(MyNewAIPlugin());

@@ -10,7 +10,7 @@ class ExplorerPlugin implements ISidePanel {
   IconData get icon => FluentIcons.fabric_folder_search;
 
   @override
-  String get title => 'Explorer';
+  String get title => 'EXPLORER';
 
   @override
   String get tooltip => 'Project Explorer';
