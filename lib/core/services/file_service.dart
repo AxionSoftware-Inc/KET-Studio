@@ -55,7 +55,8 @@ class FileService extends ChangeNotifier {
         final name = e.path.split(Platform.pathSeparator).last;
         return !name.startsWith(".ket_") &&
             name != "ket_viz.py" &&
-            name != "ketviz.py";
+            name != "ketviz.py" &&
+            name != ".ket";
       }).toList();
 
       entities.sort((a, b) {

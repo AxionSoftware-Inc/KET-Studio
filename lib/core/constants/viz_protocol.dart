@@ -11,4 +11,5 @@ class VizProtocol {
   static const String kindImage = "image";
   static const String kindTable = "table";
   static const String kindText = "text";
+  static const String kindError = "error";
 }

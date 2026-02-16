@@ -20,8 +20,7 @@ class ExecutionService {
 
     if (_process != null) stop();
 
-    terminal.write("> python $filePath");
-    terminal.write("----------------------------------------");
+    terminal.write("> Preparing execution environment...");
 
     try {
       isRunning.value = true;
@@ -30,10 +29,17 @@ class ExecutionService {
       final projectDir = Directory(
         File(filePath).parent.path,
       ).absolute.path.replaceAll(r'\', '/');
-      final launcherPath = "$projectDir/.ket_launcher.py";
+      final ketBaseDir = "$projectDir/.ket";
+      final outDir = "$ketBaseDir/out";
+      final tempDir = "$ketBaseDir/temp";
+
+      // Ensure directories exist
+      await Directory(outDir).create(recursive: true);
+      await Directory(tempDir).create(recursive: true);
+
+      final launcherPath = "$tempDir/launcher.py";
       final helperPath1 = "$projectDir/ket_viz.py";
       final helperPath2 = "$projectDir/ketviz.py";
-      final vizDir = "$projectDir/.ket_viz";
 
       const helperCode = """
 import json, time, os
@@ -53,9 +59,10 @@ def text(content):
     viz("text", {"content": content})
 
 def plot(fig, name="plot.png", title=None):
-    if not os.path.exists(".ket_viz"):
-        os.makedirs(".ket_viz")
-    path = os.path.join(".ket_viz", name)
+    out_dir = os.environ.get("KET_OUT", ".")
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    path = os.path.join(out_dir, name)
     fig.savefig(path, bbox_inches='tight')
     viz("image", {"path": path, "title": title or name})
     return path
@@ -65,8 +72,7 @@ def dashboard(histogram=None, matrix=None):
     viz("quantum", {"histogram": histogram, "matrix": matrix})
 """;
 
-      final launcherCode =
-          """
+      final launcherCode = """
 import sys
 import os
 import json
@@ -79,7 +85,7 @@ try:
     
     def ket_show(*args, **kwargs):
         import time
-        vdir = '$vizDir'.replace('\\\\', '/')
+        vdir = os.environ.get("KET_OUT", ".")
         if not os.path.exists(vdir):
             os.makedirs(vdir)
         path = os.path.join(vdir, f"viz_{int(time.time()*1000)}.png")
@@ -90,7 +96,7 @@ try:
     import matplotlib.figure
     def ket_fig_show(self, *args, **kwargs):
         import time
-        vdir = '$vizDir'.replace('\\\\', '/')
+        vdir = os.environ.get("KET_OUT", ".")
         if not os.path.exists(vdir):
             os.makedirs(vdir)
         path = os.path.join(vdir, f"viz_{int(time.time()*1000)}.png")
@@ -117,12 +123,38 @@ except Exception as e:
       await File(helperPath2).writeAsString(helperCode);
       await File(launcherPath).writeAsString(launcherCode);
 
-      // 2. START PROCESS
-      _process = await Process.start('python', [
-        '-u',
-        launcherPath,
-        filePath,
-      ], workingDirectory: projectDir);
+      // Try python then python3
+      String executable = 'python';
+      try {
+        final check = await Process.run(executable, ['--version']);
+        if (check.exitCode != 0) throw 'fail';
+      } catch (e) {
+        executable = 'python3';
+        try {
+          final check = await Process.run(executable, ['--version']);
+          if (check.exitCode != 0) throw 'fail';
+        } catch (e) {
+          terminal.write(
+            "❌ Error: Python not found. Please install Python and add it to PATH.",
+          );
+          VizService().updateData(
+            VizType.error,
+            "Python not found. Please check your system PATH.",
+          );
+          isRunning.value = false;
+          return;
+        }
+      }
+
+      terminal.write("> Executing: $executable $filePath");
+      terminal.write("----------------------------------------");
+
+      _process = await Process.start(
+        executable,
+        ['-u', launcherPath, filePath],
+        workingDirectory: projectDir,
+        environment: {"KET_OUT": outDir, "PYTHONUNBUFFERED": "1"},
+      );
       if (_process == null) {
         terminal.write("❌ Error: Python start failed.");
         isRunning.value = false;
@@ -263,19 +295,20 @@ except Exception as e:
         }
       });
 
-      _process!.stderr
-          .transform(utf8.decoder)
-          .listen((data) => terminal.write("Error: $data"));
+      _process?.stderr.transform(utf8.decoder).listen((data) {
+        terminal.write("❌ Error: $data");
+        VizService().updateData(VizType.error, data);
+      });
 
-      int exitCode = await _process!.exitCode;
-
+      final exitCode = await _process!.exitCode;
       terminal.write("----------------------------------------");
       terminal.write("Process finished with exit code $exitCode");
 
       _process = null;
-      isRunning.value = false; // <--- To'xtadi
+      isRunning.value = false;
     } catch (e) {
-      terminal.write("System Error: $e");
+      terminal.write("⚠️ System Error: $e");
+      VizService().updateData(VizType.error, e.toString());
       isRunning.value = false;
     }
   }

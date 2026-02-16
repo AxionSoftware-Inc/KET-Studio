@@ -10,6 +10,7 @@ enum VizType {
   table,
   text,
   heatmap,
+  error, // <--- New error type
   none,
 }
 
@@ -27,16 +28,27 @@ class VizService extends ChangeNotifier {
   factory VizService() => _instance;
   VizService._internal();
 
+  final List<VizData> _history = [];
+  List<VizData> get history => _history;
+
   VizData? _currentData;
   VizData? get currentData => _currentData;
 
   void updateData(VizType type, dynamic data) {
     _currentData = VizData(type: type, data: data);
+    _history.insert(0, _currentData!); // Add to history (newest first)
+    if (_history.length > 50) _history.removeLast(); // Limit history
+    notifyListeners();
+  }
+
+  void setCurrent(VizData data) {
+    _currentData = data;
     notifyListeners();
   }
 
   void clear() {
     _currentData = null;
+    _history.clear();
     notifyListeners();
   }
 }

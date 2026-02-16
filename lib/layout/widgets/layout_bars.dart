@@ -5,6 +5,7 @@ import '../../core/services/menu_service.dart';
 import '../../core/services/execution_service.dart';
 import '../../core/services/editor_service.dart';
 import '../../core/services/layout_service.dart';
+import '../../core/services/python_setup_service.dart';
 import '../../core/plugin/plugin_system.dart';
 
 // 1. TOP BAR (Custom Title Bar)
@@ -28,11 +29,50 @@ class TopBar extends StatelessWidget {
           // App Icon & Brand
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Icon(
-              FluentIcons.code,
-              size: 20,
-              color: const Color(0xFF9C27B0),
+            child: Image.asset(
+              'assets/quantum.jpg',
+              width: 24,
+              height: 24,
+              fit: BoxFit.contain,
             ),
+          ),
+
+          // INSTALLATIONS STATUS
+          ValueListenableBuilder<String?>(
+            valueListenable: PythonSetupService().currentTask,
+            builder: (context, task, child) {
+              if (task == null) return const SizedBox();
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: ProgressRing(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      task.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
 
           // Main Menu Section
@@ -48,10 +88,7 @@ class TopBar extends StatelessWidget {
                         child: DropDownButton(
                           title: Text(
                             group.title,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.white,
-                            ),
+                            style: TextStyle(fontSize: 13, color: Colors.white),
                           ),
                           items: group.items.map((item) {
                             if (item.isSeparator) {
@@ -371,13 +408,22 @@ class StatusBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 15),
+                Text(
+                  "Alpha v1.0.0",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 15),
                 const Icon(
                   FluentIcons.check_mark,
                   size: 10,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 4),
-                const Text(
+                Text(
                   "Ready",
                   style: TextStyle(color: Colors.white, fontSize: 11),
                 ),

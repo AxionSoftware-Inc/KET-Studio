@@ -9,6 +9,7 @@ import '../core/theme/ket_theme.dart';
 import '../core/plugin/plugin_system.dart';
 import '../core/services/layout_service.dart';
 import '../core/services/menu_service.dart';
+import '../core/services/python_setup_service.dart';
 
 // MODULES
 import '../modules/editor/editor_widget.dart';
@@ -34,6 +35,12 @@ class _MainLayoutState extends State<MainLayout> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (MenuService().menus.isEmpty) setupMenus(context);
+
+      // Auto-setup Qiskit environment
+      if (!_layout.isBottomPanelVisible) {
+        _layout.toggleBottomPanel();
+      }
+      PythonSetupService().checkAndInstallDependencies();
     });
   }
 

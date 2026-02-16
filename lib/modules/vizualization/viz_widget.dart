@@ -12,6 +12,8 @@ class VizualizationWidget extends StatefulWidget {
 }
 
 class _VizualizationWidgetState extends State<VizualizationWidget> {
+  bool _showHistory = false;
+
   @override
   void initState() {
     super.initState();
@@ -30,20 +32,87 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
   Widget build(BuildContext context) {
     final viz = VizService().currentData;
 
-    if (viz == null) {
-      return _buildEmptyState();
-    }
-
     return Column(
       children: [
         _buildHeader(viz),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: _buildVizContent(viz),
+          child: Row(
+            children: [
+              if (_showHistory) _buildHistorySidebar(),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: viz == null
+                      ? _buildEmptyState()
+                      : _buildVizContent(viz),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildHistorySidebar() {
+    final history = VizService().history;
+    return Container(
+      width: 200,
+      decoration: const BoxDecoration(
+        color: KetTheme.bgSidebar,
+        border: Border(right: BorderSide(color: Colors.black, width: 2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              "HISTORY (${history.length})",
+              style: const TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: history.length,
+              itemBuilder: (context, index) {
+                final item = history[index];
+                final isSelected = item == VizService().currentData;
+                return ListTile(
+                  onPressed: () => VizService().setCurrent(item),
+                  tileColor: isSelected
+                      ? WidgetStatePropertyAll(
+                          KetTheme.accent.withValues(alpha: 0.1),
+                        )
+                      : null,
+                  leading: Icon(
+                    _getIconForType(item.type),
+                    size: 14,
+                    color: isSelected ? KetTheme.accent : Colors.grey,
+                  ),
+                  title: Text(
+                    item.type.toString().split('.').last,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected
+                          ? KetTheme.textMain
+                          : KetTheme.textMuted,
+                    ),
+                  ),
+                  subtitle: Text(
+                    "${item.timestamp.hour}:${item.timestamp.minute}:${item.timestamp.second}",
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -76,28 +145,40 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     );
   }
 
-  Widget _buildHeader(VizData viz) {
+  Widget _buildHeader(VizData? viz) {
     return Container(
       height: 35,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: KetTheme.bgHeader,
       child: Row(
         children: [
-          Icon(_getIconForType(viz.type), size: 14, color: KetTheme.accent),
-          const SizedBox(width: 8),
-          Text(
-            viz.type.toString().split('.').last.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: KetTheme.textMain,
-            ),
-          ),
-          const Spacer(),
           IconButton(
-            icon: const Icon(FluentIcons.clear, size: 12),
-            onPressed: () => VizService().clear(),
+            icon: Icon(
+              _showHistory ? FluentIcons.collapse_menu : FluentIcons.history,
+              size: 14,
+              color: _showHistory ? KetTheme.accent : Colors.grey,
+            ),
+            onPressed: () => setState(() => _showHistory = !_showHistory),
           ),
+          const SizedBox(width: 8),
+          if (viz != null) ...[
+            Icon(_getIconForType(viz.type), size: 14, color: KetTheme.accent),
+            const SizedBox(width: 8),
+            Text(
+              viz.type.toString().split('.').last.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: KetTheme.textMain,
+              ),
+            ),
+          ],
+          const Spacer(),
+          if (viz != null)
+            IconButton(
+              icon: const Icon(FluentIcons.clear, size: 12),
+              onPressed: () => VizService().clear(),
+            ),
         ],
       ),
     );
@@ -122,6 +203,8 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         return FluentIcons.text_document;
       case VizType.heatmap:
         return FluentIcons.iot;
+      case VizType.error:
+        return FluentIcons.error;
       default:
         return FluentIcons.info;
     }
@@ -164,9 +247,60 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         return _TableDisplay(data: payload);
       case VizType.text:
         return _TextDisplay(data: payload);
+      case VizType.error:
+        return _ErrorDisplay(error: payload.toString());
       default:
         return const Text("Unknown Visualization");
     }
+  }
+}
+
+class _ErrorDisplay extends StatelessWidget {
+  final String error;
+  const _ErrorDisplay({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D0000),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFF0000), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(FluentIcons.error, color: Color(0xFFFF4444), size: 18),
+              SizedBox(width: 8),
+              Text(
+                "PYTHON TERMINATED WITH ERROR",
+                style: TextStyle(
+                  color: Color(0xFFFF4444),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: SelectableText(
+                error,
+                style: const TextStyle(
+                  color: Color(0xFFFF9999),
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
