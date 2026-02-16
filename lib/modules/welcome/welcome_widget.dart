@@ -12,148 +12,157 @@ class WelcomeWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: KetTheme.bgCanvas,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Logo & Title
-              Row(
+      child: SingleChildScrollView(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 60.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      'assets/quantum.jpg',
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // Logo & Title
+                  Row(
                     children: [
-                      Text(
-                        DemoContent.welcomeTitle,
-                        style: TextStyle(
-                          fontSize: 42,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          'assets/quantum.jpg',
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
                         ),
                       ),
+                      const SizedBox(width: 24),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            DemoContent.welcomeTitle,
+                            style: const TextStyle(
+                              fontSize: 42,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            DemoContent.welcomeSubtitle,
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: KetTheme.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 60),
+
+                  // Actions Row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Start Section
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSectionHeader(FluentIcons.play, "START"),
+                            const SizedBox(height: 16),
+                            _buildActionItem(
+                              context,
+                              FluentIcons.page_add,
+                              "New File",
+                              "Create a new quantum script",
+                              () => EditorService().openFile("untitled.py", ""),
+                            ),
+                            _buildActionItem(
+                              context,
+                              FluentIcons.fabric_open_folder_horizontal,
+                              "Open Folder",
+                              "Open an existing project",
+                              () => CommandService().execute("file.openFolder"),
+                            ),
+                            _buildActionItem(
+                              context,
+                              FluentIcons.test_beaker,
+                              "Try Demo",
+                              "See KET Studio in action",
+                              () => EditorService().openFile(
+                                "demo_visualizer.py",
+                                DemoContent.demoScript,
+                              ),
+                              isHighlight: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 40),
+                      // Recent Section
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSectionHeader(FluentIcons.history, "RECENT"),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No recent projects yet.\nStart by creating a new file.",
+                              style: TextStyle(
+                                color: KetTheme.textMuted,
+                                fontSize: 13,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // Templates Section
+                  _buildSectionHeader(FluentIcons.library, "QUANTUM TEMPLATES"),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: TemplateService.templates.map((tpl) {
+                      return _buildTemplateCard(tpl);
+                    }).toList(),
+                  ),
+
+                  const SizedBox(height: 80),
+
+                  // Footer
+                  Container(
+                    height: 1,
+                    width: double.infinity,
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _buildFooterLink(
+                        "Learning Resources",
+                        FluentIcons.reading_mode,
+                      ),
+                      const SizedBox(width: 24),
+                      _buildFooterLink("Quantum Hardware", FluentIcons.iot),
+                      const Spacer(),
                       Text(
-                        DemoContent.welcomeSubtitle,
+                        "Alpha v1.0.0",
                         style: TextStyle(
-                          fontSize: 18,
                           color: KetTheme.textMuted,
+                          fontSize: 11,
                         ),
                       ),
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 60),
-
-              // Actions Row
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Start Section
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader(FluentIcons.play, "START"),
-                        const SizedBox(height: 16),
-                        _buildActionItem(
-                          context,
-                          FluentIcons.page_add,
-                          "New File",
-                          "Create a new quantum script",
-                          () => EditorService().openFile("untitled.py", ""),
-                        ),
-                        _buildActionItem(
-                          context,
-                          FluentIcons.fabric_open_folder_horizontal,
-                          "Open Folder",
-                          "Open an existing project",
-                          () => CommandService().execute("file.openFolder"),
-                        ),
-                        _buildActionItem(
-                          context,
-                          FluentIcons.test_beaker,
-                          "Try Demo",
-                          "See KET Studio in action",
-                          () => EditorService().openFile(
-                            "demo_visualizer.py",
-                            DemoContent.demoScript,
-                          ),
-                          isHighlight: true,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 40),
-                  // Recent Section
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader(FluentIcons.history, "RECENT"),
-                        const SizedBox(height: 16),
-                        Text(
-                          "No recent projects yet.\nStart by creating a new file.",
-                          style: TextStyle(
-                            color: KetTheme.textMuted,
-                            fontSize: 13,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 40),
-
-              // Templates Section
-              _buildSectionHeader(FluentIcons.library, "QUANTUM TEMPLATES"),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: TemplateService.templates.map((tpl) {
-                  return _buildTemplateCard(tpl);
-                }).toList(),
-              ),
-
-              const SizedBox(height: 80),
-
-              // Footer
-              Container(
-                height: 1,
-                width: double.infinity,
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _buildFooterLink(
-                    "Learning Resources",
-                    FluentIcons.reading_mode,
-                  ),
-                  const SizedBox(width: 24),
-                  _buildFooterLink("Quantum Hardware", FluentIcons.iot),
-                  const Spacer(),
-                  Text(
-                    "Alpha v1.0.0",
-                    style: TextStyle(color: KetTheme.textMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),

@@ -4,6 +4,7 @@ import '../../core/theme/ket_theme.dart';
 import 'dart:math' as math;
 import 'dart:io';
 import 'dart:async';
+import 'inspector_widget.dart';
 
 class VizualizationWidget extends StatefulWidget {
   const VizualizationWidget({super.key});
@@ -231,6 +232,8 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         return _TextDisplay(data: payload);
       case VizType.error:
         return _ErrorDisplay(error: payload.toString());
+      case VizType.inspector:
+        return InspectorWidget(payload: payload);
       default:
         return const Text("Unknown Visualization");
     }
@@ -295,6 +298,8 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         return FluentIcons.table_group;
       case VizType.table:
         return FluentIcons.list;
+      case VizType.inspector:
+        return FluentIcons.processing_run;
       default:
         return FluentIcons.info;
     }
@@ -378,12 +383,12 @@ class _MatrixHeatmap extends StatelessWidget {
     } else if (data is Map) {
       final map = data as Map;
       int maxIdx = 0;
-      map.keys.forEach((k) {
+      for (var k in map.keys) {
         final p = k.toString().split(',');
         if (p.length == 2) {
           maxIdx = math.max(maxIdx, math.max(int.parse(p[0]), int.parse(p[1])));
         }
-      });
+      }
       rows = cols = maxIdx + 1;
     }
 

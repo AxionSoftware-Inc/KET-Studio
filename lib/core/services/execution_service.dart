@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart'; // <--- ValueNotifier uchun kerak
+import 'package:fluent_ui/fluent_ui.dart';
 import 'terminal_service.dart';
 import 'viz_service.dart';
+import 'layout_service.dart';
 
 class ExecutionService {
   static final ExecutionService _instance = ExecutionService._internal();
@@ -10,6 +12,7 @@ class ExecutionService {
   ExecutionService._internal();
 
   Process? _process;
+  String _stdoutBuffer = "";
 
   // --- 1. BU YERDA XATO BERAYOTGAN "isRunning" BOR ---
   final ValueNotifier<bool> isRunning = ValueNotifier(false);
@@ -22,6 +25,7 @@ class ExecutionService {
     terminal.write("> Preparing execution environment...");
 
     try {
+      terminal.clear();
       isRunning.value = true;
       final sessionId = "v_${DateTime.now().millisecondsSinceEpoch}";
       VizService().startSession(sessionId);
@@ -96,6 +100,10 @@ def plot(fig, name="plot.png", title=None):
 def dashboard(histogram=None, matrix=None):
     \"\"\"Combine histogram and matrix in one view\"\"\"
     viz("quantum", {"histogram": histogram, "matrix": matrix})
+
+def inspector(title, frames):
+    \"\"\"Steppable circuit inspection with Bloch spheres\"\"\"
+    viz("inspector", {"title": title, "frames": frames})
 """;
 
       final launcherCode = """
@@ -104,30 +112,67 @@ import os
 import json
 
 # --- KET IDE INTERCEPTOR ---
+import builtins
+import json
+import time
+import os
+import sys
+import io
+
+# Force UTF-8 for stdout to avoid charmap errors on Windows
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+def _ket_viz_impl(kind, payload):
+    # Use ensure_ascii=True (default) for IPC safety. 
+    # Non-ASCII chars will be escaped (e.g. \u03c0), and decoded back in Dart.
+    msg = {"kind": kind, "payload": payload, "ts": int(time.time()*1000)}
+    print(f"KET_VIZ {json.dumps(msg, ensure_ascii=True)}", flush=True)
+
+# Inject into builtins so it's available in all modules without import
+builtins.ket_viz = _ket_viz_impl
+
+# Helper aliases in builtins
+builtins.ket_histogram = lambda counts, title="Counts": _ket_viz_impl("quantum", {"histogram": counts, "title": title})
+builtins.ket_heatmap = lambda data, title="Heatmap": _ket_viz_impl("heatmap", {"data": data, "title": title})
+builtins.ket_text = lambda text: _ket_viz_impl("text", {"content": text})
+builtins.ket_inspector = lambda title, frames: _ket_viz_impl("inspector", {"title": title, "frames": frames})
+
+# Backward compatibility / Fake module
+class _KetVizMock:
+    def __getattr__(self, name):
+        if name == "histogram": return builtins.ket_histogram
+        if name == "heatmap": return builtins.ket_heatmap
+        if name == "text": return builtins.ket_text
+        if name == "inspector": return builtins.ket_inspector
+        return lambda *args, **kwargs: _ket_viz_impl(name, args[0] if args else kwargs)
+    def __call__(self, kind, payload): _ket_viz_impl(kind, payload)
+
+import sys
+sys.modules['ket_viz'] = _KetVizMock()
+
 try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     
     def ket_show(*args, **kwargs):
-        import time
         vdir = os.environ.get("KET_OUT", ".")
         if not os.path.exists(vdir):
             os.makedirs(vdir)
         path = os.path.join(vdir, f"viz_{int(time.time()*1000)}.png")
         plt.savefig(path, bbox_inches='tight')
-        print(f"IMAGE:{path}")
+        print(f"IMAGE:{path}", flush=True)
         plt.close()
     
     import matplotlib.figure
     def ket_fig_show(self, *args, **kwargs):
-        import time
         vdir = os.environ.get("KET_OUT", ".")
         if not os.path.exists(vdir):
             os.makedirs(vdir)
         path = os.path.join(vdir, f"viz_{int(time.time()*1000)}.png")
         self.savefig(path, bbox_inches='tight')
-        print(f"IMAGE:{path}")
+        print(f"IMAGE:{path}", flush=True)
     
     plt.show = ket_show
     matplotlib.figure.Figure.show = ket_fig_show
@@ -138,6 +183,11 @@ except Exception:
 import runpy
 try:
     target_script = sys.argv[1]
+    # Ensure current script directory is in path
+    script_dir = os.path.dirname(os.path.abspath(target_script))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+        
     sys.argv = sys.argv[1:]
     runpy.run_path(target_script, run_name="__main__")
 except Exception as e:
@@ -187,151 +237,69 @@ except Exception as e:
         return;
       }
 
+      _stdoutBuffer = ""; // Clear buffer for new execution
       _process!.stdout.transform(utf8.decoder).listen((data) {
-        final lines = data.split('\n');
-        for (var line in lines) {
-          final trimmed = line.trim();
-          if (trimmed.isEmpty) continue;
+        _stdoutBuffer += data;
+        while (true) {
+          final newlineIndex = _stdoutBuffer.indexOf('\n');
+          if (newlineIndex == -1) break;
 
-          // --- KET_VIZ PROTOCOL ---
-          final upperTrimmed = trimmed.toUpperCase();
-          if (upperTrimmed.startsWith("KET_VIZ")) {
+          String line = _stdoutBuffer.substring(0, newlineIndex).trim();
+          _stdoutBuffer = _stdoutBuffer.substring(newlineIndex + 1);
+
+          if (line.isEmpty) continue;
+          terminal.write(line);
+
+          final upperLine = line.toUpperCase();
+          if (upperLine.contains("KET_VIZ")) {
             try {
-              // Extract everything after the first colon or after the "KET_VIZ" tag
-              String jsonPart;
-              if (upperTrimmed.contains(':')) {
-                jsonPart = trimmed.substring(trimmed.indexOf(':') + 1).trim();
-              } else {
-                jsonPart = trimmed.substring(7).trim(); // Skip "KET_VIZ"
-              }
+              final int start = line.indexOf('{');
+              final int end = line.lastIndexOf('}');
 
-              final msg = jsonDecode(jsonPart);
-              String kind = (msg['kind'] ?? msg['type'] ?? "")
-                  .toString()
-                  .toLowerCase();
-              final payload = msg['payload'] ?? msg['data'];
+              if (start != -1 && end != -1 && end > start) {
+                final jsonStr = line.substring(start, end + 1);
+                final msg = jsonDecode(jsonStr);
 
-              // Map 'quantum' kind to our internal 'dashboard' type for consistency
-              if (kind == "quantum") kind = "dashboard";
+                String kind = (msg['kind'] ?? msg['type'] ?? "")
+                    .toString()
+                    .toLowerCase();
+                final payload = msg['payload'] ?? msg['data'];
 
-              final type = VizType.values.firstWhere(
-                (e) => e.toString().split('.').last == kind,
-                orElse: () => VizType.none,
-              );
+                if (kind == "quantum" || kind == "dashboard") {
+                  kind = "dashboard";
+                }
 
-              if (type != VizType.none) {
-                // Image path resolution
-                if (type == VizType.image || type == VizType.circuit) {
-                  String? path = payload is Map
-                      ? payload['path']
-                      : payload.toString();
-                  if (path != null && !File(path).isAbsolute) {
-                    if (payload is Map) payload['path'] = "$projectDir/$path";
+                final type = VizType.values.firstWhere(
+                  (e) => e.toString().split('.').last == kind,
+                  orElse: () => VizType.none,
+                );
+
+                if (type != VizType.none) {
+                  if (type == VizType.image || type == VizType.circuit) {
+                    String? path = payload is Map
+                        ? payload['path']
+                        : payload.toString();
+                    if (path != null && !File(path).isAbsolute) {
+                      if (payload is Map) payload['path'] = "$projectDir/$path";
+                    }
                   }
+                  VizService().updateData(type, payload);
+
+                  // Auto-switch panels safely outside of build phase
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (type == VizType.inspector) {
+                      LayoutService().setRightPanel('inspector');
+                    } else if (type != VizType.none && type != VizType.error) {
+                      if (LayoutService().activeRightPanelId == null) {
+                        LayoutService().setRightPanel('vizualization');
+                      }
+                    }
+                  });
                 }
-                VizService().updateData(type, payload);
               }
             } catch (e) {
-              debugPrint("KET_VIZ Parse Error: $e in line: $trimmed");
+              terminal.write("⚠️ Viz Parse Error: $e");
             }
-          }
-          // 1. VIZ: explicitly (Legacy support)
-          else if (trimmed.startsWith("VIZ:")) {
-            try {
-              final jsonStr = trimmed.substring(4).trim();
-              final map = jsonDecode(jsonStr);
-              final typeStr = map['type'] as String;
-              final vizData = map['data'];
-
-              final type = VizType.values.firstWhere(
-                (e) => e.toString().split('.').last == typeStr,
-                orElse: () => VizType.none,
-              );
-
-              if (type != VizType.none) {
-                VizService().updateData(type, vizData);
-              }
-            } catch (e) {
-              debugPrint("Viz Parse Error: $e");
-            }
-          }
-          // 2. __DATA__: pattern
-          else if (trimmed.startsWith("__DATA__:")) {
-            try {
-              final jsonStr = trimmed.substring(9).trim();
-              final data = jsonDecode(jsonStr);
-              VizService().updateData(VizType.dashboard, data);
-            } catch (e) {
-              debugPrint("__DATA__ Parse Error: $e");
-            }
-          }
-          // 3. BLOCH:theta,phi OR BLOCH:x,y,z
-          else if (trimmed.toUpperCase().startsWith("BLOCH:")) {
-            final coords = trimmed.substring(6).split(',');
-            if (coords.length == 2) {
-              // Assume Sphere (theta, phi)
-              final theta = double.tryParse(coords[0]) ?? 0;
-              final phi = double.tryParse(coords[1]) ?? 0;
-              VizService().updateData(VizType.bloch, {
-                "theta": theta,
-                "phi": phi,
-              });
-            } else if (coords.length == 3) {
-              final x = double.tryParse(coords[0]) ?? 0;
-              final y = double.tryParse(coords[1]) ?? 0;
-              final z = double.tryParse(coords[2]) ?? 0;
-              VizService().updateData(VizType.bloch, {"x": x, "y": y, "z": z});
-            }
-          }
-          // 4. IMAGE:path
-          else if (trimmed.toUpperCase().startsWith("IMAGE:") ||
-              trimmed.toUpperCase().startsWith("CIRCUIT:")) {
-            final type = trimmed.toUpperCase().startsWith("CIRCUIT:")
-                ? VizType.circuit
-                : VizType.image;
-            var path = trimmed.substring(trimmed.indexOf(":") + 1).trim();
-
-            // Resolve relative path
-            if (!File(path).isAbsolute) {
-              path = "$projectDir/$path";
-            }
-
-            VizService().updateData(type, path);
-          }
-          // 5. GENERIC JSON (e.g. Qiskit events)
-          else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            try {
-              final map = jsonDecode(trimmed);
-
-              // Prioritize images/charts
-              String? imgPath =
-                  map['path'] ??
-                  map['hist_path'] ??
-                  map['image_path'] ??
-                  map['circuit_path'];
-
-              if (imgPath != null) {
-                if (!File(imgPath).isAbsolute) {
-                  imgPath = "$projectDir/$imgPath";
-                }
-                VizService().updateData(VizType.image, imgPath);
-              } else if (map.containsKey('final_counts') ||
-                  map.containsKey('counts')) {
-                final counts = map['final_counts'] ?? map['counts'];
-                VizService().updateData(VizType.dashboard, {
-                  "histogram": counts,
-                });
-              } else {
-                // If it's a generic JSON we don't know, just print it as text
-                terminal.write(trimmed);
-              }
-            } catch (e) {
-              terminal.write(trimmed);
-            }
-          }
-          // Default: Terminal
-          else {
-            terminal.write(trimmed);
           }
         }
       });

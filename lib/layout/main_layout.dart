@@ -91,7 +91,6 @@ class _MainLayoutState extends State<MainLayout> {
         Area(
           data: PanelHeader(panel: left, child: left.buildContent(context)),
           size: 250,
-          min: 50,
         ),
       );
     }
@@ -103,7 +102,6 @@ class _MainLayoutState extends State<MainLayout> {
         Area(
           data: PanelHeader(panel: right, child: right.buildContent(context)),
           size: 300,
-          min: 50,
         ),
       );
     }
@@ -118,8 +116,9 @@ class _MainLayoutState extends State<MainLayout> {
           dividerPainter: DividerPainters.background(color: Colors.black),
         ),
         child: MultiSplitView(
-          key: ValueKey("H-${hAreas.length}"),
-          controller: MultiSplitViewController(areas: hAreas),
+          // Use a key that only changes when the number/type of panels change
+          key: ValueKey("H-SP-${hAreas.length}-${left?.id}-${right?.id}"),
+          initialAreas: hAreas,
           builder: (context, area) => area.data as Widget,
         ),
       );
@@ -134,12 +133,11 @@ class _MainLayoutState extends State<MainLayout> {
       ),
       child: MultiSplitView(
         axis: Axis.vertical,
-        controller: MultiSplitViewController(
-          areas: [
-            Area(data: horizontalView, flex: 1),
-            Area(data: TerminalWidget(layout: _layout), size: 180, min: 50),
-          ],
-        ),
+        key: ValueKey("V-SP-${_layout.isBottomPanelVisible}"),
+        initialAreas: [
+          Area(data: horizontalView, flex: 1),
+          Area(data: TerminalWidget(layout: _layout), size: 180),
+        ],
         builder: (context, area) => area.data as Widget,
       ),
     );

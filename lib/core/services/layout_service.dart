@@ -27,6 +27,13 @@ class LayoutService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setRightPanel(String panelId) {
+    if (_activeRightPanelId != panelId) {
+      _activeRightPanelId = panelId;
+      notifyListeners();
+    }
+  }
+
   void toggleBottomPanel() {
     _isBottomPanelVisible = !_isBottomPanelVisible;
     notifyListeners();

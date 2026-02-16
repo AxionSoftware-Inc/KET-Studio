@@ -71,23 +71,26 @@ class _TerminalWidgetState extends State<TerminalWidget> {
 
               // LOGS
               Expanded(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    itemCount: TerminalService().logs.length,
-                    itemBuilder: (c, i) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        TerminalService().logs[i],
-                        style: TextStyle(
-                          color: KetTheme.textMain,
-                          fontFamily: 'Consolas',
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                      ),
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText.rich(
+                    TextSpan(
+                      children: TerminalService().logs.map((log) {
+                        return TextSpan(
+                          text: "$log\n",
+                          style: TextStyle(
+                            color: log.startsWith('⚠️') || log.startsWith('❌')
+                                ? Colors.red
+                                : log.startsWith('KET_VIZ')
+                                ? Colors.blue
+                                : KetTheme.textMain,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            height: 1.3,
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ),

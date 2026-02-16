@@ -2,6 +2,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/plugin/plugin_system.dart';
 import 'viz_widget.dart';
 import 'history_widget.dart';
+import 'inspector_sidebar_widget.dart';
 
 class VisualizationPlugin implements ISidePanel {
   @override
@@ -44,5 +45,27 @@ class VizHistoryPlugin implements ISidePanel {
   @override
   Widget buildContent(BuildContext context) {
     return const VizHistoryWidget();
+  }
+}
+
+class CircuitInspectorPlugin implements ISidePanel {
+  @override
+  String get id => 'inspector';
+
+  @override
+  IconData get icon => FluentIcons.reading_mode;
+
+  @override
+  String get title => 'INSPECTOR';
+
+  @override
+  String get tooltip => 'Circuit Inspector';
+
+  @override
+  PanelPosition get position => PanelPosition.right;
+
+  @override
+  Widget buildContent(BuildContext context) {
+    return const InspectorSidebarWidget();
   }
 }

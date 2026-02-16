@@ -12,6 +12,7 @@ enum VizType {
   table,
   text,
   heatmap,
+  inspector,
   error,
   none,
 }
@@ -82,7 +83,6 @@ class VizService extends ChangeNotifier {
     );
 
     _currentSession!.addEvent(event);
-    _selectedEvent = event;
     _status = VizStatus.hasOutput;
     notifyListeners();
   }
