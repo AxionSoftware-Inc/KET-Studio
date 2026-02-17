@@ -5,6 +5,9 @@ import 'dart:math' as math;
 import 'dart:io';
 import 'dart:async';
 import 'inspector_widget.dart';
+import '../../core/services/export_service.dart';
+import 'package:flutter/rendering.dart';
+import '../../shared/widgets/quantum_bloch_sphere.dart';
 
 /// VIZUALIZATION PERFORMANCE & STABILITY DOCS:
 /// 
@@ -105,7 +108,7 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            Expanded(child: _buildVizCard(service.selectedEvent!, isSingle: true)),
+            Expanded(child: _VizCard(event: service.selectedEvent!, isSingle: true)),
             const SizedBox(height: 12),
             Button(
               child: const Text("Back to Stream"),
@@ -145,7 +148,7 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
       padding: const EdgeInsets.all(12),
       itemCount: displayList.length,
       separatorBuilder: (_, __) => const SizedBox(height: 16),
-      itemBuilder: (_, i) => _buildVizCard(displayList[i]),
+      itemBuilder: (_, i) => _VizCard(event: displayList[i]),
     );
   }
 
@@ -207,102 +210,6 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     );
   }
 
-  Widget _buildVizCard(VizEvent event, {bool isSingle = false}) {
-    return RepaintBoundary(
-      key: ValueKey(event.timestamp.millisecondsSinceEpoch),
-      child: Container(
-        decoration: BoxDecoration(
-          color: KetTheme.bgHeader.withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-              ),
-              child: Row(
-                children: [
-                  Icon(_getIconForType(event.type), size: 12, color: KetTheme.accent),
-                  const SizedBox(width: 8),
-                  Text(
-                    event.type.toString().split('.').last.toUpperCase(),
-                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
-                  ),
-                  const Spacer(),
-                  Text(event.timeStr, style: const TextStyle(fontSize: 8, color: Colors.grey)),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: _buildVizContent(event, isSingle: isSingle),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
-    final payload = event.payload;
-    
-    // PERFORMANCE WARNING: The following components (Inspector and Matrix) are high-load.
-    // If UI freezes occur, verify the data size guards within these widgets.
-    switch (event.type) {
-      case VizType.inspector:
-        /// PERFORMANCE GUARD:
-        /// 'InspectorWidget' ichida 'Expanded' ishlatilgan. Agar u 'ListView' ichida 
-        /// balandligi belgilanmasdan kelsa, Flutter UI'ni muzlatib qo'yadi (Layout freeze).
-        /// Shuning uchun, ro'yxatda (isSingle=false) aniq balandlik beramiz.
-        if (isSingle) {
-          return InspectorWidget(payload: payload);
-        } else {
-          return SizedBox(height: 450, child: InspectorWidget(payload: payload));
-        }
-        
-      case VizType.matrix:
-      case VizType.heatmap:
-        return _MatrixHeatmap(
-          data: (payload is Map && payload.containsKey('data')) ? payload['data'] : payload,
-          title: (payload is Map && payload.containsKey('title')) ? payload['title'].toString() : null,
-        );
-
-      case VizType.dashboard:
-        return _QuantumDashboard(data: payload);
-
-      case VizType.image:
-      case VizType.circuit:
-        return _ImageDisplay(
-          path: payload is Map ? (payload['path'] ?? "").toString() : payload.toString(),
-          title: payload is Map ? (payload['title'] ?? "").toString() : null,
-          isSingle: isSingle,
-        );
-
-      case VizType.table:
-        return _TableDisplay(data: payload);
-
-      case VizType.text:
-        return _TextDisplay(data: payload);
-        
-      case VizType.error:
-        return _ErrorDisplay(error: payload.toString());
-
-      case VizType.bloch:
-        return SizedBox(height: 250, child: _BlochSpherePainter(data: payload));
-        
-      case VizType.chart:
-        return SizedBox(height: 200, child: _SimpleChart(data: payload));
-
-      default:
-        return Text("Visualization: ${event.type}");
-    }
-  }
 
   Widget _buildHeader(VizService service) {
     return Container(
@@ -324,22 +231,6 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     );
   }
 
-  IconData _getIconForType(VizType type) {
-    switch (type) {
-      case VizType.bloch:
-        return FluentIcons.product;
-      case VizType.dashboard:
-        return FluentIcons.iot;
-      case VizType.matrix:
-        return FluentIcons.table_group;
-      case VizType.table:
-        return FluentIcons.list;
-      case VizType.inspector:
-        return FluentIcons.processing_run;
-      default:
-        return FluentIcons.info;
-    }
-  }
 
   Widget _buildIdleState({String? message}) {
     return Center(
@@ -550,28 +441,62 @@ class _TableDisplay extends StatelessWidget {
 class _BlochSpherePainter extends StatelessWidget {
   final dynamic data;
   const _BlochSpherePainter({required this.data});
+  
   @override
   Widget build(BuildContext context) {
-    double x = 0, y = 0, z = 0;
+    if (data is List) {
+      final list = data as List;
+      final count = list.length;
+      
+      double size = count <= 4 ? 120 : (count <= 16 ? 80 : 50);
+      int limit = count > 100 ? 100 : count;
+
+      return Center(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          alignment: WrapAlignment.center,
+          children: list.take(limit).toList().asMap().entries.map((e) {
+            double theta = 0, phi = 0;
+            if (e.value is Map) {
+              theta = (e.value['theta'] ?? 0.0).toDouble();
+              phi = (e.value['phi'] ?? 0.0).toDouble();
+            }
+            return InteractiveBlochSphere(
+              theta: theta,
+              phi: phi,
+              size: size,
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    // Single state
+    double theta = 0, phi = 0;
     if (data is Map) {
-      if (data.containsKey('theta')) {
-        double theta = (data['theta'] ?? 0.0).toDouble();
-        double phi = (data['phi'] ?? 0.0).toDouble();
-        x = math.sin(theta) * math.cos(phi);
-        y = math.sin(theta) * math.sin(phi);
-        z = math.cos(theta);
-      } else {
-        x = (data['x'] ?? 0.0).toDouble();
-        y = (data['y'] ?? 0.0).toDouble();
-        z = (data['z'] ?? 0.0).toDouble();
+      theta = (data['theta'] ?? 0.0).toDouble();
+      phi = (data['phi'] ?? 0.0).toDouble();
+      
+      // Handle Cartesian if provided
+      if (!data.containsKey('theta') && data.containsKey('x')) {
+        double x = (data['x'] ?? 0.0).toDouble();
+        double y = (data['y'] ?? 0.0).toDouble();
+        double z = (data['z'] ?? 0.0).toDouble();
+        // Convert Cartesian to Spherical for InteractiveBlochSphere
+        double r = math.sqrt(x*x + y*y + z*z);
+        if (r > 0) {
+          theta = math.acos(z / r);
+          phi = math.atan2(y, x);
+        }
       }
     }
+
     return Center(
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: CustomPaint(
-          painter: BlochPainter(x: x, y: y, z: z),
-        ),
+      child: InteractiveBlochSphere(
+        theta: theta,
+        phi: phi,
+        size: 200,
       ),
     );
   }
@@ -790,47 +715,6 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) => true;
 }
 
-class BlochPainter extends CustomPainter {
-  final double x, y, z;
-  BlochPainter({required this.x, required this.y, required this.z});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2;
-    canvas.drawCircle(
-      c,
-      r,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.1)
-        ..style = PaintingStyle.stroke,
-    );
-    canvas.drawLine(
-      Offset(c.dx - r, c.dy),
-      Offset(c.dx + r, c.dy),
-      Paint()..color = Colors.white.withValues(alpha: 0.1),
-    );
-    canvas.drawLine(
-      Offset(c.dx, c.dy - r),
-      Offset(c.dx, c.dy + r),
-      Paint()..color = Colors.white.withValues(alpha: 0.1),
-    );
-    canvas.drawLine(
-      c,
-      Offset(c.dx + x * r * 0.8, c.dy - z * r * 0.8),
-      Paint()
-        ..color = KetTheme.accent
-        ..strokeWidth = 2,
-    );
-    canvas.drawCircle(
-      Offset(c.dx + x * r * 0.8, c.dy - z * r * 0.8),
-      3,
-      Paint()..color = KetTheme.accent,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
 
 class _TabItem extends StatelessWidget {
   final String title;
@@ -863,5 +747,149 @@ class _TabItem extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _VizCard extends StatefulWidget {
+  final VizEvent event;
+  final bool isSingle;
+  const _VizCard({required this.event, this.isSingle = false});
+
+  @override
+  State<_VizCard> createState() => _VizCardState();
+}
+
+class _VizCardState extends State<_VizCard> {
+  final GlobalKey _boundaryKey = GlobalKey();
+
+  void _exportImage() async {
+    final RenderRepaintBoundary? boundary = 
+        _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary != null) {
+      await ExportService().exportWidgetToImage(
+        boundary, 
+        fileName: "plot_${widget.event.type.name}_${widget.event.timestamp.millisecondsSinceEpoch}.png"
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final event = widget.event;
+    final isSingle = widget.isSingle;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: KetTheme.bgHeader.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                Icon(_getIconForType(event.type), size: 12, color: KetTheme.accent),
+                const SizedBox(width: 8),
+                Text(
+                  event.type.toString().split('.').last.toUpperCase(),
+                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
+                ),
+                const Spacer(),
+                Tooltip(
+                  message: "Export as Image",
+                  child: IconButton(
+                    icon: const Icon(FluentIcons.camera, size: 11),
+                    onPressed: _exportImage,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(event.timeStr, style: const TextStyle(fontSize: 8, color: Colors.grey)),
+              ],
+            ),
+          ),
+          RepaintBoundary(
+            key: _boundaryKey,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: _buildVizContent(event, isSingle: isSingle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
+  final payload = event.payload;
+  
+  switch (event.type) {
+    case VizType.inspector:
+      if (isSingle) {
+        return InspectorWidget(payload: payload);
+      } else {
+        return SizedBox(height: 450, child: InspectorWidget(payload: payload));
+      }
+      
+    case VizType.matrix:
+    case VizType.heatmap:
+      return _MatrixHeatmap(
+        data: (payload is Map && payload.containsKey('data')) ? payload['data'] : payload,
+        title: (payload is Map && payload.containsKey('title')) ? payload['title'].toString() : null,
+      );
+
+    case VizType.dashboard:
+      return _QuantumDashboard(data: payload);
+
+    case VizType.image:
+    case VizType.circuit:
+      return _ImageDisplay(
+        path: payload is Map ? (payload['path'] ?? "").toString() : payload.toString(),
+        title: payload is Map ? (payload['title'] ?? "").toString() : null,
+        isSingle: isSingle,
+      );
+
+    case VizType.table:
+      return _TableDisplay(data: payload);
+
+    case VizType.text:
+      return _TextDisplay(data: payload);
+      
+    case VizType.error:
+      return _ErrorDisplay(error: payload.toString());
+
+    case VizType.bloch:
+      return SizedBox(height: 250, child: _BlochSpherePainter(data: payload));
+      
+    case VizType.chart:
+      return SizedBox(height: 200, child: _SimpleChart(data: payload));
+
+    default:
+      return Text("Visualization: ${event.type}");
+  }
+}
+
+IconData _getIconForType(VizType type) {
+  switch (type) {
+    case VizType.bloch:
+      return FluentIcons.product;
+    case VizType.dashboard:
+      return FluentIcons.iot;
+    case VizType.matrix:
+      return FluentIcons.table_group;
+    case VizType.table:
+      return FluentIcons.list;
+    case VizType.inspector:
+      return FluentIcons.processing_run;
+    default:
+      return FluentIcons.info;
   }
 }

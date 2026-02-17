@@ -17,6 +17,7 @@ enum VizType {
   inspector,
   error,
   metrics,
+  estimator,
   none,
 }
 

@@ -13,6 +13,7 @@ void setupPlugins() {
   registry.register(MetricsPlugin());
   registry.register(CircuitInspectorPlugin());
   registry.register(VizHistoryPlugin());
+  registry.register(ResourceEstimatorPlugin());
 
   // 3. kelajakda...
   // registry.register(MyNewAIPlugin());

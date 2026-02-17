@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/theme/ket_theme.dart';
 import 'dart:math' as math;
+import '../../shared/widgets/quantum_bloch_sphere.dart';
 
 class InspectorWidget extends StatefulWidget {
   final dynamic payload;
@@ -135,33 +136,64 @@ class _InspectorWidgetState extends State<InspectorWidget> {
                 ),
                 const SizedBox(height: 16),
 
-                // Qubit States
+                // Qubit States (Adaptive Layout)
                 Center(
                   child: Builder(
                     builder: (context) {
                       final blochList = (frame['bloch'] as List<dynamic>? ?? []);
-                      final displayList = blochList.take(20).toList();
-                      final isTruncated = blochList.length > 20;
+                      final count = blochList.length;
+                      
+                      // Adaptive size and limit
+                      double size = 120;
+                      int limit = 20;
+                      
+                      if (count <= 4) {
+                        size = 150;
+                        limit = 4;
+                      } else if (count <= 12) {
+                        size = 100;
+                        limit = 12;
+                      } else if (count <= 32) {
+                        size = 80;
+                        limit = 32;
+                      } else {
+                        size = 60;
+                        limit = 64; // Performance guard
+                      }
+
+                      final displayList = blochList.take(limit).toList();
+                      final isTruncated = blochList.length > limit;
 
                       return Column(
                         children: [
                           Wrap(
-                            spacing: 16,
-                            runSpacing: 16,
+                            spacing: 12,
+                            runSpacing: 12,
                             alignment: WrapAlignment.center,
                             children: displayList.asMap().entries.map((entry) {
-                              return _buildBlochSphere(entry.key, entry.value);
+                              final theta = (entry.value['theta'] ?? 0.0).toDouble();
+                              final phi = (entry.value['phi'] ?? 0.0).toDouble();
+                              
+                              return _AdaptiveBlochCard(
+                                index: entry.key,
+                                theta: theta,
+                                phi: phi,
+                                size: size,
+                              );
                             }).toList(),
                           ),
                           if (isTruncated)
                             Padding(
-                              padding: const EdgeInsets.only(top: 16.0),
-                              child: Text(
-                                "* Showing first 20 of ${blochList.length} qubits to maintain performance.",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontStyle: FontStyle.italic,
-                                  color: KetTheme.textMuted,
+                              padding: const EdgeInsets.only(top: 24.0),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  "⚠️ Showing $limit of ${blochList.length} qubits. High-qubit simulation view is optimized for performance.",
+                                  style: TextStyle(fontSize: 10, color: Colors.orange),
                                 ),
                               ),
                             ),
@@ -170,8 +202,6 @@ class _InspectorWidgetState extends State<InspectorWidget> {
                     },
                   ),
                 ),
-
-                const SizedBox(height: 32),
               ],
             ),
           ),
@@ -219,97 +249,47 @@ class _InspectorWidgetState extends State<InspectorWidget> {
   }
 
   Widget _buildBlochSphere(int index, dynamic data) {
-    final theta = data['theta']?.toDouble() ?? 0.0;
-    final phi = data['phi']?.toDouble() ?? 0.0;
+    // This is now handled by the adaptive builder above
+    return const SizedBox.shrink();
+  }
+}
 
+class _AdaptiveBlochCard extends StatelessWidget {
+  final int index;
+  final double theta;
+  final double phi;
+  final double size;
+
+  const _AdaptiveBlochCard({
+    required this.index,
+    required this.theta,
+    required this.phi,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          "q[$index]",
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        ),
-        const SizedBox(height: 8),
-        RepaintBoundary(
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: KetTheme.textMuted.withValues(alpha: 0.3),
-              ),
-              gradient: RadialGradient(
-                colors: [
-                  KetTheme.accent.withValues(alpha: 0.1),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: CustomPaint(
-              painter: BlochPainter(theta, phi, KetTheme.accent),
+        if (size > 70) 
+          Text(
+            "q[$index]",
+            style: TextStyle(
+              fontWeight: FontWeight.bold, 
+              fontSize: size > 100 ? 11 : 9, 
+              color: KetTheme.textMuted
             ),
           ),
+        const SizedBox(height: 4),
+        InteractiveBlochSphere(
+          index: index,
+          theta: theta,
+          phi: phi,
+          size: size,
         ),
       ],
     );
   }
 }
 
-class BlochPainter extends CustomPainter {
-  final double theta;
-  final double phi;
-  final Color color;
-
-  BlochPainter(this.theta, this.phi, this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-
-    // Draw Axes (Dash effect)
-    final axisPaint = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.3)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(center.dx, 0),
-      Offset(center.dx, size.height),
-      axisPaint,
-    );
-    canvas.drawLine(
-      Offset(0, center.dy),
-      Offset(size.width, center.dy),
-      axisPaint,
-    );
-
-    // Calculate projection (Simple 2D projection for a 3D sphere)
-    // theta: 0 to pi (Z axis), phi: 0 to 2pi (XY plane)
-    final z = math.cos(theta);
-    final x = math.sin(theta) * math.cos(phi);
-    // ignore: unused_local_variable
-    final y = math.sin(theta) * math.sin(phi);
-
-    // Vector point on 2D
-    final vectorX = center.dx + (x * radius);
-    final vectorY = center.dy - (z * radius); // Negative because UI Y is down
-
-    canvas.drawLine(center, Offset(vectorX, vectorY), paint);
-    canvas.drawCircle(
-      Offset(vectorX, vectorY),
-      4,
-      paint..style = PaintingStyle.fill,
-    );
-
-    // Draw "ghost" indicator for Y/Depth if needed
-    canvas.drawCircle(center, 2, Paint()..color = Colors.white);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}

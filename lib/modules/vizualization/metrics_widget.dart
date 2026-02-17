@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/services/viz_service.dart';
 import '../../core/theme/ket_theme.dart';
+import '../../core/services/export_service.dart';
 
 class MetricsSidebarWidget extends StatelessWidget {
   const MetricsSidebarWidget({super.key});
@@ -73,10 +74,23 @@ class MetricsSidebarWidget extends StatelessWidget {
                     letterSpacing: 1.0,
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(FluentIcons.delete, size: 12),
-                  onPressed: () => service.clear(),
+                Tooltip(
+                  message: "Export to CSV",
+                  child: IconButton(
+                    icon: const Icon(FluentIcons.download, size: 12),
+                    onPressed: () => ExportService().exportMetricsToCsv(
+                      Map<String, dynamic>.from(data),
+                      fileName: "metrics_${currentSession?.id ?? 'export'}.csv",
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: "Clear Metrics",
+                  child: IconButton(
+                    icon: const Icon(FluentIcons.delete, size: 12),
+                    onPressed: () => service.clear(),
+                  ),
                 ),
               ],
             ),

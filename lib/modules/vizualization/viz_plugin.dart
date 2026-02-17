@@ -5,6 +5,7 @@ import 'history_widget.dart';
 import 'history_widget.dart';
 import 'inspector_sidebar_widget.dart';
 import 'metrics_widget.dart';
+import 'resource_estimator_widget.dart';
 
 class VisualizationPlugin implements ISidePanel {
   @override
@@ -91,5 +92,27 @@ class MetricsPlugin implements ISidePanel {
   @override
   Widget buildContent(BuildContext context) {
     return const MetricsSidebarWidget();
+  }
+}
+
+class ResourceEstimatorPlugin implements ISidePanel {
+  @override
+  String get id => 'estimator';
+
+  @override
+  IconData get icon => FluentIcons.speed_high;
+
+  @override
+  String get title => 'ESTIMATOR';
+
+  @override
+  String get tooltip => 'Resource Estimator';
+
+  @override
+  PanelPosition get position => PanelPosition.right;
+
+  @override
+  Widget buildContent(BuildContext context) {
+    return const ResourceEstimatorWidget();
   }
 }

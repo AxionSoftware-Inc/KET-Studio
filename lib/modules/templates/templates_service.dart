@@ -159,6 +159,45 @@ ket_viz.metrics({
 ket_viz.text("QFT logic loaded.")
 ''',
     ),
+    QuantumTemplate(
+      id: 'quantum_benchmarker',
+      title: "Quantum Benchmarker",
+      description: 'Test resource estimation and massive qubit visualization.',
+      icon: FluentIcons.speed_high,
+      content: '''# === Quantum Benchmarker ===
+import ket_viz, math
+
+# 1. Resource Estimation
+ket_viz.estimator({
+    "qubits": 20,
+    "depth": 145,
+    "total_gates": 1240,
+    "gate_counts": {
+        "CNOT": 450,
+        "H": 300,
+        "RX": 200,
+        "RZ": 290
+    }
+})
+
+# 2. Massive Qubit State Visualization
+# We'll send 20 qubits with different rotation phases
+bloch_data = []
+for i in range(20):
+    bloch_data.append({
+        "theta": (math.pi / 20) * i,
+        "phi": (math.pi / 10) * i
+    })
+
+ket_viz.bloch(bloch_data)
+
+ket_viz.metrics({
+    "benchmark": "Complexity Test",
+    "qubit_density": "High",
+    "viz_mode": "Adaptive Grid"
+})
+''',
+    ),
   ];
 
   static void useTemplate(QuantumTemplate template) {

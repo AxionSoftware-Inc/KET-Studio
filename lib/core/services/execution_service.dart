@@ -152,6 +152,7 @@ builtins.ket_heatmap = lambda d, t="Heatmap": _viz("heatmap", {"data": d, "title
 builtins.ket_text = lambda c: _viz("text", {"content": c})
 builtins.ket_inspector = lambda t, f: _viz("inspector", {"title": t, "frames": f})
 builtins.ket_metrics = lambda m: _viz("metrics", m)
+builtins.ket_estimator = lambda e: _viz("estimator", e)
 
 try:
     import matplotlib
@@ -175,6 +176,7 @@ class _Mock:
         if n == "text": return builtins.ket_text
         if n == "inspector": return builtins.ket_inspector
         if n == "metrics": return builtins.ket_metrics
+        if n == "estimator": return builtins.ket_estimator
         return lambda *a, **k: _viz(n, a[0] if a else k)
     def __call__(self, k, p): _viz(k, p)
 
