@@ -23,7 +23,7 @@ class _TerminalWidgetState extends State<TerminalWidget> {
       _isScrollThrottled = true;
       // Using jumpTo instead of animateTo for performance during high-volume output
       _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      
+
       Future.delayed(const Duration(milliseconds: 50), () {
         _isScrollThrottled = false;
       });
@@ -37,7 +37,7 @@ class _TerminalWidgetState extends State<TerminalWidget> {
       builder: (context, _) {
         // Only trigger scroll if terminal panel is visible and active
         if (widget.layout.isBottomPanelVisible) {
-           _scrollToBottom();
+          _scrollToBottom();
         }
 
         return Container(
@@ -77,26 +77,26 @@ class _TerminalWidgetState extends State<TerminalWidget> {
 
               // LOGS
               Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: TerminalService().logs.length,
-                  itemBuilder: (context, index) {
-                    final log = TerminalService().logs[index];
-                    return Text(
-                      log,
-                      style: TextStyle(
-                        color: log.startsWith('⚠️') || log.startsWith('❌')
-                            ? Colors.red
-                            : log.startsWith('KET_VIZ')
-                            ? Colors.blue
-                            : KetTheme.textMain,
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        height: 1.3,
-                      ),
-                    );
-                  },
+                child: SelectionArea(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: TerminalService().logs.length,
+                    itemBuilder: (context, index) {
+                      final log = TerminalService().logs[index];
+                      return Text(
+                        log,
+                        style: TextStyle(
+                          color: log.startsWith('⚠️') || log.startsWith('❌')
+                              ? Colors.red
+                              : KetTheme.textMain,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
 

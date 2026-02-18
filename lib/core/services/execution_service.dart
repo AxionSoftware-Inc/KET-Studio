@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'terminal_service.dart';
 import 'viz_service.dart';
+import 'settings_service.dart';
 
 class ExecutionService {
   static final ExecutionService _instance = ExecutionService._internal();
@@ -15,11 +16,11 @@ class ExecutionService {
 
   // PERFORMANCE OPTIMIZATION:
   // 1. '_terminalLines' and '_scheduleFlush' are used to batch terminal output (every 80ms).
-  // 2. '_vizJsonQueue' stores RAW Strings. We decode only 5 JSON msgs every 60ms 
+  // 2. '_vizJsonQueue' stores RAW Strings. We decode only 5 JSON msgs every 60ms
   //    using '_scheduleVizFlush' to prevent UI thread blocking on large payloads.
   final List<String> _terminalLines = [];
   Timer? _flushTimer;
-  final List<String> _vizJsonQueue = []; 
+  final List<String> _vizJsonQueue = [];
   Timer? _vizTimer;
   String? _currentProjectDir;
 
@@ -44,22 +45,32 @@ class ExecutionService {
         final jsonStr = _vizJsonQueue[i];
         try {
           final msg = jsonDecode(jsonStr) as Map<String, dynamic>;
-          String kind0 = (msg['kind'] ?? msg['type'] ?? "").toString().toLowerCase();
+          String kind0 = (msg['kind'] ?? msg['type'] ?? "")
+              .toString()
+              .toLowerCase();
           final payload = msg['payload'] ?? msg['data'];
 
-          if (kind0 == "quantum" || kind0 == "dashboard") kind0 = "dashboard";
+          if (kind0 == "quantum" || kind0 == "histogram") kind0 = "histogram";
+          if (kind0 == "plot" || kind0 == "chart") kind0 = "chart";
 
           final type = VizType.values.firstWhere(
-            (e) => e.toString().split('.').last == kind0,
+            (e) => e.name == kind0.trim(),
             orElse: () => VizType.none,
           );
 
           if (type != VizType.none) {
+            TerminalService().write("📡 Captured: ${type.name}"); // DEBUG
+
             // Fix relative image paths
             if (type == VizType.image || type == VizType.circuit) {
-              String? path = (payload is Map) ? payload['path'] : payload.toString();
-              if (path != null && !File(path).isAbsolute && _currentProjectDir != null) {
-                if (payload is Map) payload['path'] = "$_currentProjectDir/$path";
+              String? path = (payload is Map)
+                  ? payload['path']
+                  : payload.toString();
+              if (path != null &&
+                  !File(path).isAbsolute &&
+                  _currentProjectDir != null) {
+                if (payload is Map)
+                  payload['path'] = "$_currentProjectDir/$path";
               }
             }
 
@@ -79,13 +90,24 @@ class ExecutionService {
     });
   }
 
+  // CRITICAL: Clean malformed UTF-16 (lone surrogates) which cause crashes in Flutter/SelectableText
+  String _safe(String s) {
+    try {
+      // Create a safely encoded UTF-16 string by re-encoding as UTF-8 with replacement
+      return utf8.decode(utf8.encode(s), allowMalformed: true);
+    } catch (_) {
+      return s.replaceAll(RegExp(r'[\uD800-\uDFFF]'), '');
+    }
+  }
+
   void _handleVizLine(String line) {
-    final start = line.indexOf('{');
-    final end = line.lastIndexOf('}');
+    final cleaned = _safe(line);
+    final start = cleaned.indexOf('{');
+    final end = cleaned.lastIndexOf('}');
     if (start == -1 || end == -1 || end <= start) return;
 
-    final jsonStr = line.substring(start, end + 1);
-    _vizJsonQueue.add(jsonStr); // Just add the raw string
+    final jsonStr = cleaned.substring(start, end + 1);
+    _vizJsonQueue.add(jsonStr);
     if (_vizJsonQueue.length > 100) {
       _vizJsonQueue.removeRange(0, _vizJsonQueue.length - 100);
     }
@@ -100,7 +122,7 @@ class ExecutionService {
       terminal.clear();
       _terminalLines.clear();
       _vizJsonQueue.clear();
-      
+
       Future.microtask(() => isRunning.value = true);
       final sessionId = "v_${DateTime.now().millisecondsSinceEpoch}";
       VizService().startSession(sessionId);
@@ -109,7 +131,9 @@ class ExecutionService {
       String projectDir;
 
       if (filePath.startsWith('/fake')) {
-        final tempSystemDir = Directory.systemTemp.createTempSync('ket_studio_exec_');
+        final tempSystemDir = Directory.systemTemp.createTempSync(
+          'ket_studio_exec_',
+        );
         projectDir = tempSystemDir.path.replaceAll(r'\', '/');
         actualFilePath = "$projectDir/temp_script.py";
         if (content != null) {
@@ -119,17 +143,19 @@ class ExecutionService {
           return;
         }
       } else {
-        projectDir = Directory(File(filePath).parent.path).absolute.path.replaceAll(r'\', '/');
+        projectDir = Directory(
+          File(filePath).parent.path,
+        ).absolute.path.replaceAll(r'\', '/');
       }
-      
+
       _currentProjectDir = projectDir; // Store for path fixing
 
       final outDir = "$projectDir/.ket/out";
       await Directory(outDir).create(recursive: true);
-      
+
       final tempDir = "$projectDir/.ket/temp";
       await Directory(tempDir).create(recursive: true);
-      
+
       final launcherPath = "$tempDir/launcher.py";
       final scriptToRun = actualFilePath.replaceAll(r'\', '/');
 
@@ -147,12 +173,12 @@ def _viz(kind, payload):
 
 import builtins
 builtins.ket_viz = _viz
-builtins.ket_histogram = lambda c, t="Counts": _viz("quantum", {"histogram": c, "title": t})
-builtins.ket_heatmap = lambda d, t="Heatmap": _viz("heatmap", {"data": d, "title": t})
-builtins.ket_text = lambda c: _viz("text", {"content": c})
-builtins.ket_inspector = lambda t, f: _viz("inspector", {"title": t, "frames": f})
-builtins.ket_metrics = lambda m: _viz("metrics", m)
-builtins.ket_estimator = lambda e: _viz("estimator", e)
+builtins.ket_histogram = lambda data, title="Counts": _viz("histogram", {"histogram": data, "title": title})
+builtins.ket_heatmap = lambda data, title="Heatmap": _viz("heatmap", {"data": data, "title": title})
+builtins.ket_text = lambda content: _viz("text", {"content": content})
+builtins.ket_inspector = lambda title, frames: _viz("inspector", {"title": title, "frames": frames})
+builtins.ket_metrics = lambda metrics: _viz("metrics", metrics)
+builtins.ket_estimator = lambda estimation: _viz("estimator", estimation)
 
 try:
     import matplotlib
@@ -194,45 +220,58 @@ except Exception:
 """;
       await File(launcherPath).writeAsString(launcherCode);
 
-      String executable = 'python';
-      try {
-        final check = await Process.run(executable, ['--version']).timeout(const Duration(seconds: 1));
-        if (check.exitCode != 0) throw 'fail';
-      } catch (_) { executable = 'python3'; }
+      String executable = SettingsService().pythonPath;
 
       _process = await Process.start(
-        executable, ['-u', launcherPath, scriptToRun],
+        executable,
+        ['-u', launcherPath, scriptToRun],
         workingDirectory: projectDir,
         environment: {"KET_OUT": outDir, "PYTHONUNBUFFERED": "1"},
       );
 
       final stderrCollector = <String>[];
-      _process!.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-        if (line.isEmpty) return;
-        if (line.contains("KET_VIZ")) {
-          _handleVizLine(line);
-          return;
-        }
-        _terminalLines.add(line);
-        if (_terminalLines.length >= 200) {
-          terminal.writeLines(List<String>.from(_terminalLines));
-          _terminalLines.clear();
-          _flushTimer?.cancel(); _flushTimer = null;
-        } else { _scheduleFlush(); }
-      });
+      _process!.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (line.isEmpty) return;
+            final safeLine = _safe(line);
+            if (safeLine.contains("KET_VIZ")) {
+              _handleVizLine(safeLine);
+              return;
+            }
+            _terminalLines.add(safeLine);
+            if (_terminalLines.length >= 200) {
+              terminal.writeLines(List<String>.from(_terminalLines));
+              _terminalLines.clear();
+              _flushTimer?.cancel();
+              _flushTimer = null;
+            } else {
+              _scheduleFlush();
+            }
+          });
 
-      _process!.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-        if (line.isEmpty) return;
-        stderrCollector.add(line);
-        _terminalLines.add("❌ $line");
-        _scheduleFlush();
-      });
+      _process!.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (line.isEmpty) return;
+            final safeLine = _safe(line);
+            stderrCollector.add(safeLine);
+            _terminalLines.add("❌ $safeLine");
+            _scheduleFlush();
+          });
 
       final exitCode = await _process!.exitCode;
-      _flushTimer?.cancel(); _vizTimer?.cancel();
-      if (_terminalLines.isNotEmpty) terminal.writeLines(List<String>.from(_terminalLines));
-      
-      VizService().endSession(exitCode: exitCode, error: stderrCollector.isNotEmpty ? stderrCollector.join('\n') : null);
+      _flushTimer?.cancel();
+      _vizTimer?.cancel();
+      if (_terminalLines.isNotEmpty)
+        terminal.writeLines(List<String>.from(_terminalLines));
+
+      VizService().endSession(
+        exitCode: exitCode,
+        error: stderrCollector.isNotEmpty ? stderrCollector.join('\n') : null,
+      );
       terminal.write("----------------------------------------");
       terminal.write("Process finished with exit code $exitCode");
       _process = null;

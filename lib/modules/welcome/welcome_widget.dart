@@ -28,7 +28,10 @@ class WelcomeWidget extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 850),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 80.0, horizontal: 40.0),
+              padding: const EdgeInsets.symmetric(
+                vertical: 80.0,
+                horizontal: 40.0,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,22 +248,27 @@ class WelcomeWidget extends StatelessWidget {
                   color: isHighlight ? KetTheme.accent : KetTheme.textMuted,
                 ),
                 const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isHighlight ? KetTheme.accent : Colors.white,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isHighlight ? KetTheme.accent : Colors.white,
+                        ),
                       ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 11, color: KetTheme.textMuted),
-                    ),
-                  ],
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: KetTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

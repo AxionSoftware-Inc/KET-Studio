@@ -20,182 +20,212 @@ class QuantumTemplate {
 class TemplateService {
   static final List<QuantumTemplate> templates = [
     QuantumTemplate(
-      id: 'bell_state_demo',
-      title: 'Bell State (Entanglement)',
-      description: 'The fundamental example of quantum entanglement.',
+      id: 'bell_state_dynamic',
+      title: 'Bell State (Dynamic)',
+      description:
+          'Standard entanglement with dynamic metrics and inspector steps.',
       icon: FluentIcons.reading_mode,
-      content: '''# === Dynamic Metrics Demo ===
-import math, ket_viz
-
-# 1. Measurement
-results = {"00": 512, "11": 512}
-ket_viz.histogram(results, title="Bell State Results")
-
-# 2. Dynamic Metrics (Any key works!)
-ket_viz.metrics({
-    "qubit_count": 2,
-    "gate_depth": 3,
-    "simulation_backend": "AerSimulator",
-    "execution_time_ms": 12.5,
-    "fidelity_score": 0.998,
-    "random_seed": 42
-})
-''',
-    ),
-    QuantumTemplate(
-      id: 'vqe_optimizer',
-      title: "VQE Optimizer",
-      description: 'Track energy minimization in real-time.',
-      icon: FluentIcons.test_beaker,
-      content: '''# === VQE Optimization ===
-import time, ket_viz
-
-energies = []
-for i in range(20):
-    e = -1.137 + (1.5 / (i + 1))
-    energies.append(e)
-    ket_viz.chart([(x + 2)/4 for x in energies])
-    time.sleep(0.1)
-
-# Report final optimization metrics
-ket_viz.metrics({
-    "optimizer": "COBYLA",
-    "final_energy": energies[-1],
-    "iterations": 20,
-    "convergence": "Stable",
-    "hardware_target": "FakeGuadalupe"
-})
-''',
-    ),
-    QuantumTemplate(
-      id: 'grover_search',
-      title: "Grover's Algorithm",
-      description: 'Quantum search algorithm simulation.',
-      icon: FluentIcons.search_and_apps,
-      content: '''# === Grover's Search ===
-import ket_viz
-
-# Metrics can be sent at any time!
-ket_viz.metrics({
-    "search_space": 8,
-    "target_bitstring": "101",
-    "required_steps": 2
-})
-
-results = {"101": 950, "others": 74}
-ket_viz.histogram(results, title="Grover Output")
-''',
-    ),
-    QuantumTemplate(
-      id: 'qaoa_landscape',
-      title: "QAOA Cost Landscape",
-      description: '2D Heatmap of the optimization surface.',
-      icon: FluentIcons.iot,
-      content: '''# === QAOA Landscape ===
-import ket_viz
-
-ket_viz.heatmap([
-    [0.1, 0.5, 0.2],
-    [0.4, 0.9, 0.3],
-    [0.3, 0.2, 0.1]
-], title="QAOA Surface")
-
-ket_viz.metrics({
-    "problem_type": "Max-Cut",
-    "nodes": 6,
-    "parameters": "beta, gamma",
-    "status": "Plot Generated"
-})
-''',
-    ),
-    QuantumTemplate(
-      id: 'teleportation_protocol',
-      title: "Quantum Teleportation",
-      description: 'Send qubit state using entanglement.',
-      icon: FluentIcons.cell_phone,
-      content: '''# === Teleportation ===
-import ket_viz
-
-ket_viz.metrics({
-    "protocol": "Standard teleport",
-    "communication": "Classical + Quantum",
-    "secure": True
-})
-
-ket_viz.text("Teleportation protocol completed successfully.")
-''',
-    ),
-    QuantumTemplate(
-      id: 'error_correction',
-      title: "Error Correction",
-      description: '3-qubit bit-flip code simulation.',
-      icon: FluentIcons.error_badge,
-      content: '''# === Error Correction ===
-import ket_viz
-
-ket_viz.histogram({"000": 900, "100": 100}, title="Before Correction")
-
-ket_viz.metrics({
-    "coding_scheme": "3-qubit-bitflip",
-    "error_type": "Bit Flip",
-    "correction_status": "Successful"
-})
-''',
-    ),
-    QuantumTemplate(
-      id: 'qft_transform',
-      title: "Quantum Fourier Transform",
-      description: 'Rotation phases of the QFT.',
-      icon: FluentIcons.music_note,
-      content: '''# === QFT ===
-import ket_viz
-
-ket_viz.metrics({
-    "algorithm": "QFT",
-    "complexity": "log(N)",
-    "application": "Shor's / Phase Estimation"
-})
-
-ket_viz.text("QFT logic loaded.")
-''',
-    ),
-    QuantumTemplate(
-      id: 'quantum_benchmarker',
-      title: "Quantum Benchmarker",
-      description: 'Test resource estimation and massive qubit visualization.',
-      icon: FluentIcons.speed_high,
-      content: '''# === Quantum Benchmarker ===
-import ket_viz, math
+      content: '''# === KET Studio Standard: Entanglement ===
+import ket_viz, math, time
 
 # 1. Resource Estimation
 ket_viz.estimator({
-    "qubits": 20,
-    "depth": 145,
-    "total_gates": 1240,
-    "gate_counts": {
-        "CNOT": 450,
-        "H": 300,
-        "RX": 200,
-        "RZ": 290
-    }
+    "qubits": 2,
+    "depth": 3,
+    "total_gates": 2,
+    "gate_counts": {"H": 1, "CNOT": 1}
 })
 
-# 2. Massive Qubit State Visualization
-# We'll send 20 qubits with different rotation phases
-bloch_data = []
-for i in range(20):
-    bloch_data.append({
-        "theta": (math.pi / 20) * i,
-        "phi": (math.pi / 10) * i
+# 2. Step-by-Step Inspection
+ket_viz.inspector("Entanglement Protocol", [
+    {"gate": "Initial", "state_description": "System starts in |00>", "bloch": [{"theta":0,"phi":0}, {"theta":0,"phi":0}]},
+    {"gate": "H(0)", "state_description": "Qubit 0 in superposition", "bloch": [{"theta":math.pi/2,"phi":0}, {"theta":0,"phi":0}]},
+    {"gate": "CNOT(0,1)", "state_description": "Bell State |Φ+> = (|00>+|11>)/√2", "bloch": [{"theta":math.pi/2,"phi":0}, {"theta":math.pi/2,"phi":0}]}
+])
+
+# 3. Final Execution Metrics
+ket_viz.metrics({
+    "fidelity": 0.9997,
+    "coherence_time_us": 150,
+    "gate_error_rate": 0.0001,
+    "backend": "KET Virtual QPU"
+})
+
+ket_viz.histogram({"00": 510, "11": 514}, title="Bell State Measurement")
+''',
+    ),
+    QuantumTemplate(
+      id: 'grover_professional',
+      title: "Grover's Search (Pro)",
+      description: 'Professional search algorithm with adaptive metrics.',
+      icon: FluentIcons.search_and_apps,
+      content: '''# === KET Studio Standard: Grover's Search ===
+import ket_viz, math, time
+
+def run_grover(target="101", n_qubits=3):
+    print(f"Initializing Grover Search for target: {target}")
+    
+    # Estimation based on n_qubits
+    num_states = 2**n_qubits
+    iterations = math.floor(math.pi/4 * math.sqrt(num_states))
+    
+    ket_viz.estimator({
+        "qubits": n_qubits,
+        "depth": iterations * 10,
+        "total_gates": iterations * 25,
+        "gate_counts": {"H": n_qubits + 2, "X": 4, "MCZ": iterations}
     })
 
-ket_viz.bloch(bloch_data)
+    # Progress tracking in Metrics
+    for i in range(iterations):
+        progress = (i + 1) / iterations * 100
+        ket_viz.metrics({
+            "phase": "Searching",
+            "iteration": f"{i+1}/{iterations}",
+            "completion": f"{progress:.1f}%",
+            "current_amplification": f"{math.sin((2*i+1)*math.asin(1/math.sqrt(num_states))):.3f}"
+        })
+        time.sleep(0.5)
+
+    # Final Result
+    results = {target: 942, "others": 71}
+    ket_viz.histogram(results, title=f"Grover Result (k={iterations})")
+    
+    ket_viz.metrics({
+        "status": "SUCCESS",
+        "search_efficiency": "O(√N)",
+        "optimal_iterations": iterations
+    })
+
+run_grover("101", 3)
+''',
+    ),
+    QuantumTemplate(
+      id: 'vqe_realtime',
+      title: "VQE Real-time Optimizer",
+      description: 'Dynamic VQE simulation with energy tracking.',
+      icon: FluentIcons.test_beaker,
+      content: '''# === KET Studio Standard: VQE Optimization ===
+import ket_viz, math, random, time
+
+def simulate_vqe():
+    target_energy = -1.1372 # H2 Molecule ground state
+    current_energy = 0.5
+    
+    ket_viz.estimator({
+        "qubits": 4,
+        "depth": 45,
+        "total_gates": 120,
+        "gate_counts": {"RY": 16, "CZ": 8, "R": 96}
+    })
+
+    energies = []
+    for step in range(30):
+        # Simulated optimization step
+        diff = (current_energy - target_energy) * 0.2
+        current_energy -= diff + random.uniform(-0.01, 0.01)
+        energies.append(current_energy)
+        
+        # Update Chart & Metrics live
+        ket_viz.chart(energies)
+        ket_viz.metrics({
+            "step": step,
+            "optimizer": "SLSQP",
+            "energy_ha": f"{current_energy:.5f}",
+            "convergence": f"{abs(diff):.6f}"
+        })
+        time.sleep(0.1)
+
+    ket_viz.metrics({
+        "final_energy": f"{energies[-1]:.5f}",
+        "chemical_accuracy": "Achieved" if abs(energies[-1]-target_energy) < 0.0016 else "Pending",
+        "total_iterations": 30
+    })
+
+simulate_vqe()
+''',
+    ),
+    QuantumTemplate(
+      id: 'qaoa_surface_pro',
+      title: "QAOA Optimization Surface",
+      description: 'Professional Max-Cut QAOA with landscape visualization.',
+      icon: FluentIcons.iot,
+      content: '''# === KET Studio Standard: QAOA Surface ===
+import ket_viz, math
+
+def generate_landscape(size=10):
+    # Generating a 2D cost landscape for beta/gamma parameters
+    landscape = []
+    for i in range(size):
+        row = []
+        for j in range(size):
+            # Simulated Max-Cut cost function
+            val = math.sin(i/3) * math.cos(j/3) + random.uniform(0, 0.1)
+            row.append(abs(val))
+        landscape.append(row)
+    return landscape
+
+import random
+data = generate_landscape(15)
+
+ket_viz.heatmap(data, title="Max-Cut Cost Landscape (p=1)")
 
 ket_viz.metrics({
-    "benchmark": "Complexity Test",
-    "qubit_density": "High",
-    "viz_mode": "Adaptive Grid"
+    "problem": "Max-Cut",
+    "nodes": 12,
+    "edges": 24,
+    "optimal_beta": 0.452,
+    "optimal_gamma": 1.120,
+    "approximation_ratio": 0.876
 })
+
+ket_viz.estimator({
+    "qubits": 12,
+    "depth": 24,
+    "total_gates": 156,
+    "gate_counts": {"ZZ": 24, "RX": 12, "H": 12}
+})
+''',
+    ),
+    QuantumTemplate(
+      id: 'quantum_volume_benchmark',
+      title: "Quantum Volume Benchmark",
+      description: 'Benchmark system stability and gate fidelity.',
+      icon: FluentIcons.test_beaker,
+      content: '''# === KET Studio Professional Benchmark ===
+import ket_viz, time, random
+
+def run_benchmark(n_qubits=5):
+    print(f"Starting Quantum Volume benchmark for {n_qubits} qubits...")
+    
+    ket_viz.metrics({"status": "Initializing", "qubits": n_qubits})
+    
+    # 1. Resource Estimation
+    ket_viz.estimator({
+        "qubits": n_qubits,
+        "depth": n_qubits**2,
+        "total_gates": n_qubits**3,
+        "gate_counts": {"SU(4)": n_qubits**2, "Random": n_qubits}
+    })
+
+    # 2. Heavy Output Simulation
+    results = {}
+    for i in range(2**n_qubits):
+        bit = bin(i)[2:].zfill(n_qubits)
+        results[f"|{bit}>"] = random.randint(0, 100) if random.random() > 0.8 else 5
+    
+    ket_viz.histogram(results, title=f"QV {2**n_qubits} Output Distribution")
+
+    # 3. Final Calibration Report
+    ket_viz.metrics({
+        "quantum_volume": 2**n_qubits,
+        "success_rate": "76.4%",
+        "avg_cnot_error": 0.008,
+        "readout_error": 0.02,
+        "benchmarked_at": time.strftime("%H:%M:%S")
+    })
+
+run_benchmark(5)
 ''',
     ),
   ];

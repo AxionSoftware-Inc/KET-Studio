@@ -2,7 +2,6 @@ import 'package:fluent_ui/fluent_ui.dart';
 import '../../core/plugin/plugin_system.dart';
 import 'viz_widget.dart';
 import 'history_widget.dart';
-import 'history_widget.dart';
 import 'inspector_sidebar_widget.dart';
 import 'metrics_widget.dart';
 import 'resource_estimator_widget.dart';

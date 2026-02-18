@@ -1,5 +1,4 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:multi_split_view/multi_split_view.dart';
 
 // CONFIG & THEME
 import '../config/menu_setup.dart';

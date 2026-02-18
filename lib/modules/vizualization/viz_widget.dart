@@ -10,17 +10,17 @@ import 'package:flutter/rendering.dart';
 import '../../shared/widgets/quantum_bloch_sphere.dart';
 
 /// VIZUALIZATION PERFORMANCE & STABILITY DOCS:
-/// 
+///
 /// 1. UI FREEZE GUARD (MATRIX): High-dimension matrices (e.g. 1024x1024) are NOT rendered as Widgets.
 ///    Instead, we use [CustomPainter] and strict dimension limits (128x128).
 ///    This prevents the UI thread from being overwhelmed by object allocations.
-/// 
-/// 2. LAZY DECODING: JSON data from Python is decoded in small batches (5 msgs/60ms) 
+///
+/// 2. LAZY DECODING: JSON data from Python is decoded in small batches (5 msgs/60ms)
 ///    in [ExecutionService] to avoid blocking the main thread during execution.
-/// 
+///
 /// 3. REPAINT BOUNDARY: Each Viz card is wrapped in a [RepaintBoundary] so that
 ///    scrolling doesn't trigger expensive rebuilds of complex charts/matrices.
-/// 
+///
 class VizualizationWidget extends StatefulWidget {
   const VizualizationWidget({super.key});
 
@@ -50,15 +50,26 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
 
   void _refresh() {
     if (!mounted) return;
+
+    // Debounce updates to max 30 FPS to prevent UI choke
+    final now = DateTime.now();
+    if (_lastUpdate != null &&
+        now.difference(_lastUpdate!) < const Duration(milliseconds: 32)) {
+      return;
+    }
+    _lastUpdate = now;
+
     final service = VizService();
-    
+
     if (service.status == VizStatus.running) {
       if (_runStartTime == null) {
         _runStartTime = DateTime.now();
         _showNoOutputHint = false;
         _hintTimer?.cancel();
         _hintTimer = Timer(const Duration(seconds: 3), () {
-          if (mounted && VizService().status == VizStatus.running && VizService().selectedEvent == null) {
+          if (mounted &&
+              VizService().status == VizStatus.running &&
+              VizService().selectedEvent == null) {
             setState(() => _showNoOutputHint = true);
           }
         });
@@ -77,8 +88,9 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
           _isScrollingThrottled = false;
           if (mounted && _scrollController.hasClients) {
             final pos = _scrollController.position.maxScrollExtent;
-            if ((_scrollController.offset - pos).abs() < 500) { // Only auto-scroll if close to bottom
-               _scrollController.animateTo(
+            if ((_scrollController.offset - pos).abs() < 500) {
+              // Only auto-scroll if close to bottom
+              _scrollController.animateTo(
                 pos,
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
@@ -91,6 +103,8 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
 
     setState(() {});
   }
+
+  DateTime? _lastUpdate;
 
   bool _isScrollingThrottled = false;
 
@@ -108,7 +122,9 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            Expanded(child: _VizCard(event: service.selectedEvent!, isSingle: true)),
+            Expanded(
+              child: _VizCard(event: service.selectedEvent!, isSingle: true),
+            ),
             const SizedBox(height: 12),
             Button(
               child: const Text("Back to Stream"),
@@ -126,13 +142,18 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     }
 
     final events = currentSession.events;
-    
+
     // Tushuntirish: Hammasini bittada ko'rsatib "tizib" yubormaslik uchun,
-    // har bir turdagi eng oxirgi eventni olamiz. 
+    // har bir turdagi eng oxirgi eventni olamiz.
     // Bu orqali VQE charti bitta joyda "o'ynaydi" (animatsiya bo'ladi).
     final Map<VizType, VizEvent> latestEvents = {};
     for (var e in events) {
-      if (e.type != VizType.inspector && e.type != VizType.text && e.type != VizType.error) {
+      if (e.type != VizType.inspector &&
+          e.type != VizType.text &&
+          e.type != VizType.error &&
+          e.type != VizType.metrics &&
+          e.type != VizType.estimator &&
+          e.type != VizType.none) {
         latestEvents[e.type] = e;
       }
     }
@@ -140,7 +161,15 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     final displayList = latestEvents.values.toList();
 
     if (displayList.isEmpty) {
-      return _buildIdleState(message: "No live visualizations in current session.");
+      if (status == VizStatus.running) {
+        final hasMetrics = events.any((e) => e.type == VizType.metrics);
+        return _buildRunningState(
+          message: hasMetrics ? "Syncing simulation metrics..." : null,
+        );
+      }
+      return _buildIdleState(
+        message: "No live visualizations in current session.",
+      );
     }
 
     return ListView.separated(
@@ -152,7 +181,12 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     );
   }
 
-  Widget _buildSection({required String title, required IconData icon, required Widget child, double? height}) {
+  Widget _buildSection({
+    required String title,
+    required IconData icon,
+    required Widget child,
+    double? height,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -178,10 +212,14 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
         ),
         Container(
           height: height,
-          constraints: height == null ? const BoxConstraints(minHeight: 100) : null,
+          constraints: height == null
+              ? const BoxConstraints(minHeight: 100)
+              : null,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+            ),
           ),
           child: child,
         ),
@@ -195,21 +233,35 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
       builder: (context, states) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: states.isHovered ? Colors.white.withValues(alpha: 0.05) : Colors.transparent,
+          color: states.isHovered
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.transparent,
           child: Row(
             children: [
-              Icon(_getIconForType(event.type), size: 12, color: KetTheme.accent),
+              Icon(
+                _getIconForType(event.type),
+                size: 12,
+                color: KetTheme.accent,
+              ),
               const SizedBox(width: 12),
-              Text(event.type.name.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              Text(
+                event.type.name.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const Spacer(),
-              Text(event.timeStr, style: const TextStyle(fontSize: 9, color: Colors.grey)),
+              Text(
+                event.timeStr,
+                style: const TextStyle(fontSize: 9, color: Colors.grey),
+              ),
             ],
           ),
         );
       },
     );
   }
-
 
   Widget _buildHeader(VizService service) {
     return Container(
@@ -222,15 +274,31 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
           const SizedBox(width: 8),
           Text("VISUALIZER", style: KetTheme.headerStyle),
           const Spacer(),
-          IconButton(
-            icon: const Icon(FluentIcons.delete, size: 12),
-            onPressed: () => service.clear(),
+          DropDownButton(
+            leading: const Icon(FluentIcons.delete, size: 12),
+            items: [
+              MenuFlyoutItem(
+                text: const Text('Clear History'),
+                onPressed: () => service.clearSessions(),
+              ),
+              MenuFlyoutItem(
+                text: const Text('Clear Metrics'),
+                onPressed: () => service.clearMetrics(),
+              ),
+              const MenuFlyoutSeparator(),
+              MenuFlyoutItem(
+                text: const Text('Clear All'),
+                onPressed: () {
+                  service.clearSessions();
+                  service.clearMetrics();
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-
 
   Widget _buildIdleState({String? message}) {
     return Center(
@@ -241,7 +309,7 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     );
   }
 
-  Widget _buildRunningState() {
+  Widget _buildRunningState({String? message}) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -249,9 +317,10 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
           const ProgressRing(),
           const SizedBox(height: 16),
           Text(
-            _showNoOutputHint
-                ? "Running... (no visual output yet)"
-                : "Capturing quantum data...",
+            message ??
+                (_showNoOutputHint
+                    ? "Running... (no visual output yet)"
+                    : "Capturing quantum data..."),
             style: TextStyle(color: KetTheme.textMuted, fontSize: 12),
           ),
         ],
@@ -300,10 +369,15 @@ class _MatrixHeatmap extends StatelessWidget {
   Widget build(BuildContext context) {
     int rows = 0;
     int cols = 0;
+    List<List<double>> matrixData = [];
 
     if (data is List) {
-      rows = (data as List).length;
-      cols = rows > 0 ? (data[0] as List).length : 0;
+      final list = data as List;
+      rows = list.length;
+      cols = rows > 0 ? (list[0] as List).length : 0;
+      matrixData = list
+          .map((r) => (r as List).map((v) => (v as num).toDouble()).toList())
+          .toList();
     } else if (data is Map) {
       final map = data as Map;
       int maxIdx = -1;
@@ -317,15 +391,23 @@ class _MatrixHeatmap extends StatelessWidget {
         }
       }
       rows = cols = maxIdx + 1;
+      // Convert map sparse data to dense for painter (or handle sparse in painter, but dense is easier for now)
+      matrixData = List.generate(
+        rows,
+        (r) => List.generate(cols, (c) {
+          return (map['$r,$c'] ?? 0.0).toDouble();
+        }),
+      );
     }
 
-    if (rows == 0) return const Text("No matrix data", style: TextStyle(fontSize: 10, color: Colors.grey));
-    
-    // Safety Guard: Don't render extremely large matrices inline
-    if (rows > 128 || cols > 128) {
-      return Text("Matrix too large for inline view (${rows}x${cols})", style: TextStyle(fontSize: 10, color: Colors.orange));
+    if (rows == 0) {
+      return const Text(
+        "No matrix data",
+        style: TextStyle(fontSize: 10, color: Colors.grey),
+      );
     }
 
+    // Use CustomPainter for large matrices
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,27 +419,22 @@ class _MatrixHeatmap extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             double w = constraints.maxWidth;
-            double padding = 2; // Spacing between cells
+            double padding = 2;
             double cellSize = (w - (cols - 1) * padding) / cols;
             cellSize = math.min(cellSize, 40.0); // Limit cell size
 
-            return Center(
-              child: SizedBox(
-                width: cellSize * cols + (cols - 1) * padding,
-                child: Wrap(
-                  spacing: padding,
-                  runSpacing: padding,
-                  children: List.generate(rows * cols, (i) {
-                    int r = i ~/ cols;
-                    int c = i % cols;
-                    double val = 0;
-                    if (data is List) {
-                      val = (data[r][c] as num).toDouble();
-                    } else if (data is Map) {
-                      val = (data['$r,$c'] ?? 0.0).toDouble();
-                    }
-                    return _HeatBox(value: val, size: cellSize);
-                  }),
+            final totalHeight = cellSize * rows + (rows - 1) * padding;
+
+            return SizedBox(
+              width: cellSize * cols + (cols - 1) * padding,
+              height: totalHeight,
+              child: CustomPaint(
+                painter: _HeatmapPainter(
+                  data: matrixData,
+                  rows: rows,
+                  cols: cols,
+                  cellSize: cellSize,
+                  padding: padding,
                 ),
               ),
             );
@@ -368,41 +445,70 @@ class _MatrixHeatmap extends StatelessWidget {
   }
 }
 
-class _HeatBox extends StatelessWidget {
-  final double value;
-  final double size;
-  const _HeatBox({required this.value, required this.size});
+class _HeatmapPainter extends CustomPainter {
+  final List<List<double>> data;
+  final int rows;
+  final int cols;
+  final double cellSize;
+  final double padding;
+
+  _HeatmapPainter({
+    required this.data,
+    required this.rows,
+    required this.cols,
+    required this.cellSize,
+    required this.padding,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Color.lerp(
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        final val = data[r][c];
+        paint.color = Color.lerp(
           const Color(0xFF1A1A1A),
           KetTheme.accent,
-          value.clamp(0.0, 1.0),
-        ),
-        borderRadius: BorderRadius.circular(2),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: value > 0.5 ? 0.2 : 0.05),
-          width: 0.5,
-        ),
-      ),
-      child: size > 25 
-        ? Center(
-            child: Text(
-              value > 0.05 ? value.toStringAsFixed(1) : "",
-              style: TextStyle(
-                fontSize: size * 0.35, 
-                color: value > 0.6 ? Colors.black : Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+          val.clamp(0.0, 1.0),
+        )!;
+
+        final left = c * (cellSize + padding);
+        final top = r * (cellSize + padding);
+        final rect = Rect.fromLTWH(left, top, cellSize, cellSize);
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+          paint,
+        );
+
+        // Draw Value Text only if cell is large enough
+        if (cellSize > 25 && val > 0.05) {
+          textPainter.text = TextSpan(
+            text: val.toStringAsFixed(1),
+            style: TextStyle(
+              fontSize: cellSize * 0.35,
+              color: val > 0.6 ? Colors.black : Colors.white,
+              fontWeight: FontWeight.bold,
             ),
-          )
-        : null,
-    );
+          );
+          textPainter.layout();
+          textPainter.paint(
+            canvas,
+            Offset(
+              left + (cellSize - textPainter.width) / 2,
+              top + (cellSize - textPainter.height) / 2,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeatmapPainter oldDelegate) {
+    return oldDelegate.data != data || oldDelegate.cellSize != cellSize;
   }
 }
 
@@ -413,10 +519,13 @@ class _TableDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = data?['title'] ?? "Table";
     final rowsList = data?['rows'] as List? ?? [];
-    
+
     // Guard: Prevent massive table builds
     if (rowsList.length > 100) {
-       return Text("Table too large to display (${rowsList.length} rows)", style: TextStyle(fontSize: 10, color: Colors.orange));
+      return Text(
+        "Table too large to display (${rowsList.length} rows)",
+        style: TextStyle(fontSize: 10, color: Colors.orange),
+      );
     }
 
     return Column(
@@ -429,8 +538,23 @@ class _TableDisplay extends StatelessWidget {
           final cells = row as List;
           return Container(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
-            child: Row(children: cells.map((c) => Expanded(child: Text(c.toString(), style: const TextStyle(fontSize: 11)))).toList()),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+              ),
+            ),
+            child: Row(
+              children: cells
+                  .map(
+                    (c) => Expanded(
+                      child: Text(
+                        c.toString(),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
           );
         }),
       ],
@@ -441,13 +565,13 @@ class _TableDisplay extends StatelessWidget {
 class _BlochSpherePainter extends StatelessWidget {
   final dynamic data;
   const _BlochSpherePainter({required this.data});
-  
+
   @override
   Widget build(BuildContext context) {
     if (data is List) {
       final list = data as List;
       final count = list.length;
-      
+
       double size = count <= 4 ? 120 : (count <= 16 ? 80 : 50);
       int limit = count > 100 ? 100 : count;
 
@@ -462,11 +586,7 @@ class _BlochSpherePainter extends StatelessWidget {
               theta = (e.value['theta'] ?? 0.0).toDouble();
               phi = (e.value['phi'] ?? 0.0).toDouble();
             }
-            return InteractiveBlochSphere(
-              theta: theta,
-              phi: phi,
-              size: size,
-            );
+            return InteractiveBlochSphere(theta: theta, phi: phi, size: size);
           }).toList(),
         ),
       );
@@ -477,14 +597,14 @@ class _BlochSpherePainter extends StatelessWidget {
     if (data is Map) {
       theta = (data['theta'] ?? 0.0).toDouble();
       phi = (data['phi'] ?? 0.0).toDouble();
-      
+
       // Handle Cartesian if provided
       if (!data.containsKey('theta') && data.containsKey('x')) {
         double x = (data['x'] ?? 0.0).toDouble();
         double y = (data['y'] ?? 0.0).toDouble();
         double z = (data['z'] ?? 0.0).toDouble();
         // Convert Cartesian to Spherical for InteractiveBlochSphere
-        double r = math.sqrt(x*x + y*y + z*z);
+        double r = math.sqrt(x * x + y * y + z * z);
         if (r > 0) {
           theta = math.acos(z / r);
           phi = math.atan2(y, x);
@@ -493,11 +613,7 @@ class _BlochSpherePainter extends StatelessWidget {
     }
 
     return Center(
-      child: InteractiveBlochSphere(
-        theta: theta,
-        phi: phi,
-        size: 200,
-      ),
+      child: InteractiveBlochSphere(theta: theta, phi: phi, size: 200),
     );
   }
 }
@@ -507,20 +623,39 @@ class _HistogramChart extends StatelessWidget {
   const _HistogramChart({required this.data});
   @override
   Widget build(BuildContext context) {
-    if (data is! Map) return const SizedBox();
-    final map = data as Map;
+    if (data is! Map) {
+      return Text(
+        "Histogram: Data must be a Map/Dict",
+        style: TextStyle(color: Colors.red, fontSize: 10),
+      );
+    }
+
+    Map map = data as Map;
+    // Support wrapped payload: {"histogram": {...}}
+    if (map.containsKey('histogram') && map['histogram'] is Map) {
+      map = map['histogram'] as Map;
+    }
+
+    if (map.isEmpty) {
+      return Text(
+        "Histogram: Empty data",
+        style: TextStyle(color: Colors.grey, fontSize: 10),
+      );
+    }
     final keys = map.keys.toList();
     final values = map.values.map((v) => (v as num).toDouble()).toList();
-    final maxVal = values.isEmpty ? 1.0 : values.reduce(math.max);
+    final double maxVal = values.isEmpty ? 1.0 : values.reduce(math.max);
+    final double safeMax = maxVal == 0 ? 1.0 : maxVal;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double barWidth = (constraints.maxWidth / math.max(keys.length, 1)) - 8;
+        final double barWidth =
+            (constraints.maxWidth / math.max(keys.length, 1)) - 8;
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: List.generate(keys.length, (i) {
-            final double hRatio = values[i] / maxVal;
+            final double hRatio = values[i] / safeMax;
             return Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -531,9 +666,14 @@ class _HistogramChart extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [KetTheme.accent, KetTheme.accent.withValues(alpha: 0.5)],
+                      colors: [
+                        KetTheme.accent,
+                        KetTheme.accent.withValues(alpha: 0.5),
+                      ],
                     ),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(4),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: KetTheme.accent.withValues(alpha: 0.2),
@@ -546,7 +686,11 @@ class _HistogramChart extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   keys[i].toString(),
-                  style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
                 ),
               ],
             );
@@ -619,19 +763,23 @@ class _ImageDisplay extends StatelessWidget {
   final String? title;
   final bool isSingle;
   const _ImageDisplay({required this.path, this.title, this.isSingle = false});
-  
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         if (title != null)
-          Text(title!, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+          Text(
+            title!,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          ),
         SizedBox(
           height: isSingle ? null : 300,
           child: Image.file(
-            File(path), 
+            File(path),
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Text("Image not available"),
+            errorBuilder: (context, error, stackTrace) =>
+                const Text("Image not available"),
           ),
         ),
       ],
@@ -642,12 +790,23 @@ class _ImageDisplay extends StatelessWidget {
 class _SimpleChart extends StatelessWidget {
   final dynamic data;
   const _SimpleChart({required this.data});
-  
+
   @override
   Widget build(BuildContext context) {
-    if (data is! List || data.isEmpty) return const SizedBox();
-    final List<double> points = (data as List).map((p) => (p as num).toDouble()).toList();
-    
+    if (data is! List)
+      return Text(
+        "Chart: Data must be a List",
+        style: TextStyle(color: Colors.red, fontSize: 10),
+      );
+    if (data.isEmpty)
+      return Text(
+        "Chart: Empty data",
+        style: TextStyle(color: Colors.grey, fontSize: 10),
+      );
+    final List<double> points = (data as List)
+        .map((p) => (p as num).toDouble())
+        .toList();
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: CustomPaint(
@@ -669,9 +828,9 @@ class _LineChartPainter extends CustomPainter {
 
     final path = Path();
     final fillPath = Path();
-    
+
     final double stepX = size.width / (points.length - 1);
-    
+
     path.moveTo(0, size.height * (1 - points[0].clamp(0.0, 1.0)));
     fillPath.moveTo(0, size.height);
     fillPath.lineTo(0, size.height * (1 - points[0].clamp(0.0, 1.0)));
@@ -708,19 +867,26 @@ class _LineChartPainter extends CustomPainter {
     final lastX = size.width;
     final lastY = size.height * (1 - points.last.clamp(0.0, 1.0));
     canvas.drawCircle(Offset(lastX, lastY), 4, Paint()..color = color);
-    canvas.drawCircle(Offset(lastX, lastY), 8, Paint()..color = color.withValues(alpha: 0.3));
+    canvas.drawCircle(
+      Offset(lastX, lastY),
+      8,
+      Paint()..color = color.withValues(alpha: 0.3),
+    );
   }
 
   @override
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) => true;
 }
 
-
 class _TabItem extends StatelessWidget {
   final String title;
   final bool isActive;
   final VoidCallback onTap;
-  const _TabItem({required this.title, required this.isActive, required this.onTap});
+  const _TabItem({
+    required this.title,
+    required this.isActive,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -731,7 +897,10 @@ class _TabItem extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: isActive ? KetTheme.accent : Colors.transparent, width: 2),
+              bottom: BorderSide(
+                color: isActive ? KetTheme.accent : Colors.transparent,
+                width: 2,
+              ),
             ),
           ),
           child: Center(
@@ -763,12 +932,14 @@ class _VizCardState extends State<_VizCard> {
   final GlobalKey _boundaryKey = GlobalKey();
 
   void _exportImage() async {
-    final RenderRepaintBoundary? boundary = 
-        _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    final RenderRepaintBoundary? boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary != null) {
       await ExportService().exportWidgetToImage(
-        boundary, 
-        fileName: "plot_${widget.event.type.name}_${widget.event.timestamp.millisecondsSinceEpoch}.png"
+        boundary,
+        fileName:
+            "plot_${widget.event.type.name}_${widget.event.timestamp.millisecondsSinceEpoch}.png",
       );
     }
   }
@@ -792,15 +963,25 @@ class _VizCardState extends State<_VizCard> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(8),
+              ),
             ),
             child: Row(
               children: [
-                Icon(_getIconForType(event.type), size: 12, color: KetTheme.accent),
+                Icon(
+                  _getIconForType(event.type),
+                  size: 12,
+                  color: KetTheme.accent,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   event.type.toString().split('.').last.toUpperCase(),
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
                 ),
                 const Spacer(),
                 Tooltip(
@@ -811,15 +992,26 @@ class _VizCardState extends State<_VizCard> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(event.timeStr, style: const TextStyle(fontSize: 8, color: Colors.grey)),
+                Text(
+                  event.timeStr,
+                  style: const TextStyle(fontSize: 8, color: Colors.grey),
+                ),
               ],
             ),
           ),
           RepaintBoundary(
             key: _boundaryKey,
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: _buildVizContent(event, isSingle: isSingle),
+            child: Builder(
+              builder: (context) {
+                try {
+                  return Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: _buildVizContent(event, isSingle: isSingle),
+                  );
+                } catch (e) {
+                  return _ErrorDisplay(error: "Render Error: $e");
+                }
+              },
             ),
           ),
         ],
@@ -830,7 +1022,7 @@ class _VizCardState extends State<_VizCard> {
 
 Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
   final payload = event.payload;
-  
+
   switch (event.type) {
     case VizType.inspector:
       if (isSingle) {
@@ -838,12 +1030,16 @@ Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
       } else {
         return SizedBox(height: 450, child: InspectorWidget(payload: payload));
       }
-      
+
     case VizType.matrix:
     case VizType.heatmap:
       return _MatrixHeatmap(
-        data: (payload is Map && payload.containsKey('data')) ? payload['data'] : payload,
-        title: (payload is Map && payload.containsKey('title')) ? payload['title'].toString() : null,
+        data: (payload is Map && payload.containsKey('data'))
+            ? payload['data']
+            : payload,
+        title: (payload is Map && payload.containsKey('title'))
+            ? payload['title'].toString()
+            : null,
       );
 
     case VizType.dashboard:
@@ -852,7 +1048,9 @@ Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
     case VizType.image:
     case VizType.circuit:
       return _ImageDisplay(
-        path: payload is Map ? (payload['path'] ?? "").toString() : payload.toString(),
+        path: payload is Map
+            ? (payload['path'] ?? "").toString()
+            : payload.toString(),
         title: payload is Map ? (payload['title'] ?? "").toString() : null,
         isSingle: isSingle,
       );
@@ -862,18 +1060,36 @@ Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
 
     case VizType.text:
       return _TextDisplay(data: payload);
-      
+
     case VizType.error:
       return _ErrorDisplay(error: payload.toString());
 
     case VizType.bloch:
       return SizedBox(height: 250, child: _BlochSpherePainter(data: payload));
-      
+
     case VizType.chart:
       return SizedBox(height: 200, child: _SimpleChart(data: payload));
 
+    case VizType.histogram:
+      return SizedBox(height: 150, child: _HistogramChart(data: payload));
+
     default:
-      return Text("Visualization: ${event.type}");
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Visualization: ${event.type}",
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            payload.toString(),
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
+            maxLines: 5,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      );
   }
 }
 
@@ -889,6 +1105,10 @@ IconData _getIconForType(VizType type) {
       return FluentIcons.list;
     case VizType.inspector:
       return FluentIcons.processing_run;
+    case VizType.histogram:
+      return FluentIcons.bar_chart_vertical;
+    case VizType.chart:
+      return FluentIcons.line_chart;
     default:
       return FluentIcons.info;
   }

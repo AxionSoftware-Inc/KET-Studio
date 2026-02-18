@@ -26,6 +26,9 @@ class VizHistoryWidget extends StatelessWidget {
           itemCount: sessions.length,
           itemBuilder: (context, sIndex) {
             final session = sessions[sIndex];
+            // If we have many events, restrict height to improve performance and usability
+            final bool useScrollableList = session.events.length > 5;
+
             return Expander(
               initiallyExpanded: sIndex == 0,
               header: Row(
@@ -34,51 +37,60 @@ class VizHistoryWidget extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "Session ${session.id.replaceFirst('v_', '')}",
+                      "Session ${session.id.replaceFirst('v_', '')} (${session.events.length})",
                       style: const TextStyle(fontSize: 11),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
-              content: Column(
-                children: session.events.map((e) {
-                  final isSelected = e == service.selectedEvent;
-                  return ListTile(
-                    onPressed: () => service.selectEvent(e),
-                    tileColor: isSelected
-                        ? WidgetStatePropertyAll(
-                            KetTheme.accent.withValues(alpha: 0.1),
-                          )
-                        : null,
-                    leading: Icon(
-                      _getIconForType(e.type),
-                      size: 12,
-                      color: isSelected ? KetTheme.accent : Colors.grey,
-                    ),
-                    title: Text(
-                      e.type.toString().split('.').last.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: isSelected
-                            ? KetTheme.textMain
-                            : KetTheme.textMuted,
+              content: useScrollableList
+                  ? SizedBox(
+                      height: 300,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(right: 12),
+                        itemCount: session.events.length,
+                        itemBuilder: (ctx, i) =>
+                            _buildEventTile(service, session.events[i]),
                       ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: session.events
+                          .map((e) => _buildEventTile(service, e))
+                          .toList(),
                     ),
-                    subtitle: Text(
-                      e.timeStr,
-                      style: const TextStyle(fontSize: 9, color: Colors.grey),
-                    ),
-                  );
-                }).toList(),
-              ),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildEventTile(VizService service, VizEvent e) {
+    final isSelected = e == service.selectedEvent;
+    return ListTile(
+      onPressed: () => service.selectEvent(e),
+      tileColor: isSelected
+          ? WidgetStatePropertyAll(KetTheme.accent.withValues(alpha: 0.1))
+          : null,
+      leading: Icon(
+        _getIconForType(e.type),
+        size: 12,
+        color: isSelected ? KetTheme.accent : Colors.grey,
+      ),
+      title: Text(
+        e.type.toString().split('.').last.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? KetTheme.textMain : KetTheme.textMuted,
+        ),
+      ),
+      subtitle: Text(
+        e.timeStr,
+        style: const TextStyle(fontSize: 9, color: Colors.grey),
+      ),
     );
   }
 

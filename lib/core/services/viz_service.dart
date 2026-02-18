@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/scheduler.dart';
 
 enum VizStatus { idle, running, hasOutput, error, stopped }
 
@@ -18,6 +16,7 @@ enum VizType {
   error,
   metrics,
   estimator,
+  histogram,
   none,
 }
 
@@ -102,12 +101,12 @@ class VizService extends ChangeNotifier {
 
     _currentSession!.addEvent(event);
     _status = VizStatus.hasOutput;
-    
+
     // Throttled notification to avoid freezing UI with rapid updates
     if (!_isUpdateThrottled) {
       _isUpdateThrottled = true;
       notifyListeners();
-      Future.delayed(const Duration(milliseconds: 100), () {
+      Future.delayed(const Duration(milliseconds: 33), () {
         _isUpdateThrottled = false;
         notifyListeners();
       });
@@ -140,10 +139,24 @@ class VizService extends ChangeNotifier {
   }
 
   void clear() {
+    clearSessions();
+  }
+
+  void clearSessions() {
     _currentSession = null;
     _sessions.clear();
     _selectedEvent = null;
     _status = VizStatus.idle;
+    notifyListeners();
+  }
+
+  void clearMetrics() {
+    // Implement if metrics are stored separately, for now we assume they are part of session
+    // Or if metrics plugin stores data elsewhere.
+    // If metrics are just visualizations, this might not need changes unless we have a specific metrics list.
+    // Assuming user wants to be able to clear dashboard without clearing history:
+    // This requires metrics identifying themselves.
+    // For now, let's just notify so plugins can react.
     notifyListeners();
   }
 }

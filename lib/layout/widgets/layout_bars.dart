@@ -58,29 +58,46 @@ class TopBar extends StatelessWidget {
                       title: Text(group.title, style: KetTheme.menuStyle),
                       trailing: const SizedBox.shrink(),
                       style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith((states) {
+                        backgroundColor: WidgetStateProperty.resolveWith((
+                          states,
+                        ) {
                           if (states.isHovered) return KetTheme.bgHover;
                           return Colors.transparent;
                         }),
-                        shape: WidgetStateProperty.all(RoundedRectangleBorder(
-                          side: BorderSide.none,
-                          borderRadius: BorderRadius.zero,
-                        )),
-                        padding: WidgetStateProperty.all(const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        )),
+                        shape: WidgetStateProperty.all(
+                          RoundedRectangleBorder(
+                            side: BorderSide.none,
+                            borderRadius: BorderRadius.zero,
+                          ),
+                        ),
+                        padding: WidgetStateProperty.all(
+                          const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                        ),
                       ),
                       items: group.items.map((item) {
-                        if (item.isSeparator) return const MenuFlyoutSeparator();
+                        if (item.isSeparator)
+                          return const MenuFlyoutSeparator();
                         final cmd = item.command;
                         if (cmd == null) return const MenuFlyoutSeparator();
                         return MenuFlyoutItem(
-                          leading: cmd.icon != null ? Icon(cmd.icon, size: 14) : null,
+                          leading: cmd.icon != null
+                              ? Icon(cmd.icon, size: 14)
+                              : null,
                           text: Text(item.label, style: KetTheme.menuStyle),
-                          onPressed: (cmd.isEnabled == null || cmd.isEnabled!()) ? cmd.action : null,
+                          onPressed: (cmd.isEnabled == null || cmd.isEnabled!())
+                              ? cmd.action
+                              : null,
                           trailing: cmd.shortcut != null
-                              ? Text(cmd.shortcut!, style: KetTheme.menuStyle.copyWith(color: KetTheme.textMuted, fontSize: 10))
+                              ? Text(
+                                  cmd.shortcut!,
+                                  style: KetTheme.menuStyle.copyWith(
+                                    color: KetTheme.textMuted,
+                                    fontSize: 10,
+                                  ),
+                                )
                               : null,
                         );
                       }).toList(),
@@ -90,29 +107,8 @@ class TopBar extends StatelessWidget {
               );
             },
           ),
-          
-          // Python Status
-          ValueListenableBuilder<String?>(
-            valueListenable: PythonSetupService().currentTask,
-            builder: (context, task, child) {
-              if (task == null) return const SizedBox();
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
-                child: Row(children: [
-                  const SizedBox(width: 10, height: 10, child: ProgressRing(strokeWidth: 1.5)),
-                  const SizedBox(width: 6),
-                  Text(task.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue)),
-                ]),
-              );
-            },
-          ),
-
           // 2. CENTER - DRAG AREA (Non-interactive)
-          Expanded(
-            child: MoveWindow(child: SizedBox.expand()),
-          ),
+          Expanded(child: MoveWindow(child: SizedBox.expand())),
 
           // 3. RIGHT - ACTIONS (Interactive)
           ValueListenableBuilder<bool>(
@@ -126,7 +122,11 @@ class TopBar extends StatelessWidget {
                       child: Tooltip(
                         message: "Stop Execution",
                         child: IconButton(
-                          icon: const Icon(FluentIcons.stop, color: Color(0xFFFF0000), size: 16),
+                          icon: const Icon(
+                            FluentIcons.stop,
+                            color: Color(0xFFFF0000),
+                            size: 16,
+                          ),
                           onPressed: () => ExecutionService().stop(),
                         ),
                       ),
@@ -136,17 +136,30 @@ class TopBar extends StatelessWidget {
                     child: FilledButton(
                       onPressed: running ? null : _handleRun,
                       style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith((states) {
-                          if (running) return Colors.grey.withValues(alpha: 0.2);
-                          if (states.isHovered) return Colors.green.withValues(alpha: 0.8);
+                        backgroundColor: WidgetStateProperty.resolveWith((
+                          states,
+                        ) {
+                          if (running)
+                            return Colors.grey.withValues(alpha: 0.2);
+                          if (states.isHovered)
+                            return Colors.green.withValues(alpha: 0.8);
                           return Colors.green;
                         }),
                       ),
                       child: Row(
                         children: [
-                          Icon(running ? FluentIcons.progress_ring_dots : FluentIcons.play, size: 14, color: Colors.white),
+                          Icon(
+                            running
+                                ? FluentIcons.progress_ring_dots
+                                : FluentIcons.play,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                           const SizedBox(width: 8),
-                          const Text("RUN", style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            "RUN",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ],
                       ),
                     ),
@@ -180,10 +193,7 @@ class MoveWindow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DragToMoveArea(
-      child: Container(
-        color: Colors.transparent,
-        child: child,
-      ),
+      child: Container(color: Colors.transparent, child: child),
     );
   }
 }
@@ -279,10 +289,16 @@ class ActivityBar extends StatelessWidget {
             color: KetTheme.bgActivityBar,
             border: Border(
               right: isLeft
-                  ? BorderSide(color: Colors.black.withValues(alpha: 0.2), width: 1)
+                  ? BorderSide(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      width: 1,
+                    )
                   : BorderSide.none,
               left: !isLeft
-                  ? BorderSide(color: Colors.black.withValues(alpha: 0.2), width: 1)
+                  ? BorderSide(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      width: 1,
+                    )
                   : BorderSide.none,
             ),
           ),
@@ -298,16 +314,21 @@ class ActivityBar extends StatelessWidget {
                   height: 48,
                   width: 48,
                   child: Stack(
-                    alignment: isLeft ? Alignment.centerLeft : Alignment.centerRight,
+                    alignment: isLeft
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
                     children: [
-                      if (isActive) Container(width: 2, height: 28, color: KetTheme.accent),
+                      if (isActive)
+                        Container(width: 2, height: 28, color: KetTheme.accent),
                       Center(
                         child: Tooltip(
                           message: panel.title,
                           child: IconButton(
                             icon: Icon(
                               panel.icon,
-                              color: isActive ? Colors.white : KetTheme.textMuted,
+                              color: isActive
+                                  ? Colors.white
+                                  : KetTheme.textMuted,
                               size: 18,
                             ),
                             onPressed: () {
@@ -343,10 +364,12 @@ class StatusBar extends StatelessWidget {
       listenable: Listenable.merge([
         EditorService(),
         ExecutionService().isRunning,
+        PythonSetupService(),
       ]),
       builder: (context, _) {
         final editor = EditorService();
         final exec = ExecutionService();
+        final setup = PythonSetupService();
         final activeFile = editor.activeFile;
 
         return Container(
@@ -401,7 +424,44 @@ class StatusBar extends StatelessWidget {
 
               const Spacer(),
 
-              // 3. CURSOR POSITION
+              // 3. PYTHON ENVIRONMENT (HEALTH CHECK)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      setup.isSetupComplete
+                          ? FluentIcons.completed
+                          : FluentIcons.sync_status,
+                      size: 10,
+                      color: setup.isSetupComplete
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 6),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: setup.currentTask,
+                      builder: (context, task, _) {
+                        return Text(
+                          task ??
+                              (setup.isSetupComplete
+                                  ? "Environment: Ready"
+                                  : "Environment: Initializing"),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const Divider(direction: Axis.vertical),
+
+              // 4. CURSOR POSITION
               if (activeFile != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
@@ -413,7 +473,7 @@ class StatusBar extends StatelessWidget {
 
               const Divider(direction: Axis.vertical),
 
-              // 4. EXECUTION STATUS
+              // 5. EXECUTION STATUS
               ValueListenableBuilder<bool>(
                 valueListenable: exec.isRunning,
                 builder: (context, running, _) {
@@ -425,12 +485,16 @@ class StatusBar extends StatelessWidget {
                           const SizedBox(
                             width: 10,
                             height: 10,
-                            child: ProgressRing(strokeWidth: 1.5, value: null),
+                            child: ProgressRing(
+                              strokeWidth: 1.5,
+                              value: null,
+                              activeColor: Colors.white,
+                            ),
                           ),
                           const SizedBox(width: 6),
                         ],
                         Text(
-                          running ? "Python Running" : "Ready",
+                          running ? "Python Running" : "Engine: Idle",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -445,7 +509,7 @@ class StatusBar extends StatelessWidget {
 
               const Divider(direction: Axis.vertical),
 
-              // 5. VERSION
+              // 6. VERSION
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12.0),
                 child: Text(
