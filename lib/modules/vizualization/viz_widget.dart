@@ -670,16 +670,18 @@ class _SimpleChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data is! List)
+    if (data is! List) {
       return Text(
         "Chart: Data must be a List",
         style: TextStyle(color: Colors.red, fontSize: 10),
       );
-    if (data.isEmpty)
+    }
+    if (data.isEmpty) {
       return Text(
         "Chart: Empty data",
         style: TextStyle(color: Colors.grey, fontSize: 10),
       );
+    }
     final List<double> points = (data as List)
         .map((p) => (p as num).toDouble())
         .toList();

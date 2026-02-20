@@ -7,6 +7,7 @@ import '../core/services/execution_service.dart';
 import '../core/services/layout_service.dart';
 import '../core/services/file_service.dart';
 import '../modules/settings/settings_widget.dart';
+import '../layout/widgets/package_dialog.dart';
 
 void setupCommands(BuildContext context) {
   final commands = CommandService();
@@ -250,24 +251,13 @@ void setupCommands(BuildContext context) {
   // --- HELP COMMANDS ---
   commands.registerCommand(
     Command(
-      id: "help.about",
-      title: "About KET Studio",
-      icon: FluentIcons.info,
+      id: "help.packages",
+      title: "Manage Packages",
+      icon: FluentIcons.packages,
       action: () {
         showDialog(
           context: context,
-          builder: (context) => ContentDialog(
-            title: const Text("About KET Studio"),
-            content: const Text(
-              "Quantum-Powered Python IDE.\nBuilt with Fluent UI & Flutter.",
-            ),
-            actions: [
-              Button(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
+          builder: (context) => const PackageDialog(),
         );
       },
     ),

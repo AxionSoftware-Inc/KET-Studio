@@ -23,113 +23,6 @@ class TopBar extends StatelessWidget {
     );
   }
 
-  void _showPackageDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: const Text("Python Package Manager"),
-        content: ListenableBuilder(
-          listenable: PythonSetupService(),
-          builder: (context, _) {
-            final setup = PythonSetupService();
-            final allLibs = [
-              ...setup.coreLibraries,
-              ...setup.optionalLibraries,
-            ];
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Manage your quantum environment libraries.",
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: allLibs.map((lib) {
-                        final name = lib.split('[').first;
-                        final version = setup.packageVersions[name];
-                        final isInstalled = version != null;
-
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Colors.black.withValues(alpha: 0.1),
-                              ),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isInstalled
-                                    ? FluentIcons.check_mark
-                                    : FluentIcons.circle_addition,
-                                size: 12,
-                                color: isInstalled ? Colors.green : Colors.grey,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      isInstalled
-                                          ? "Version: $version"
-                                          : "Not installed",
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (!isInstalled)
-                                Button(
-                                  child: const Text("Install"),
-                                  onPressed: () => setup.installPackage(lib),
-                                )
-                              else
-                                Text(
-                                  "Ready",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          Button(
-            child: const Text("Close"),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -185,10 +78,13 @@ class TopBar extends StatelessWidget {
                         ),
                       ),
                       items: group.items.map((item) {
-                        if (item.isSeparator)
+                        if (item.isSeparator) {
                           return const MenuFlyoutSeparator();
+                        }
                         final cmd = item.command;
-                        if (cmd == null) return const MenuFlyoutSeparator();
+                        if (cmd == null) {
+                          return const MenuFlyoutSeparator();
+                        }
                         return MenuFlyoutItem(
                           leading: cmd.icon != null
                               ? Icon(cmd.icon, size: 14)
@@ -223,42 +119,7 @@ class TopBar extends StatelessWidget {
             builder: (context, running, child) {
               return Row(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: HoverButton(
-                      onPressed: () => _showPackageDialog(context),
-                      builder: (context, states) => Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: states.isHovered
-                              ? KetTheme.bgHover
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              FluentIcons.packages,
-                              size: 14,
-                              color: KetTheme.accent,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              "PACKAGES",
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
+                  const SizedBox(width: 12),
                   if (running)
                     Padding(
                       padding: const EdgeInsets.only(right: 8.0),
@@ -282,10 +143,12 @@ class TopBar extends StatelessWidget {
                         backgroundColor: WidgetStateProperty.resolveWith((
                           states,
                         ) {
-                          if (running)
+                          if (running) {
                             return Colors.grey.withValues(alpha: 0.2);
-                          if (states.isHovered)
+                          }
+                          if (states.isHovered) {
                             return Colors.green.withValues(alpha: 0.8);
+                          }
                           return Colors.green;
                         }),
                       ),
@@ -632,7 +495,7 @@ class StatusBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: Text(
                     "Ln ${editor.cursorLine}, Col ${editor.cursorColumn}",
-                    style: TextStyle(color: Colors.white, fontSize: 11),
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
                   ),
                 ),
 

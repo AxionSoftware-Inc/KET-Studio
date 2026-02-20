@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/ket_theme.dart';
 
@@ -42,7 +44,9 @@ class _SettingsWidgetState extends State<SettingsWidget> {
                   );
                 }).toList(),
                 onChanged: (mode) {
-                  if (mode != null) settings.setThemeMode(mode);
+                  if (mode != null) {
+                    settings.setThemeMode(mode);
+                  }
                 },
               ),
             ),
@@ -129,8 +133,17 @@ class _SettingsWidgetState extends State<SettingsWidget> {
               onChanged: (v) => settings.setPythonPath(v),
               suffix: IconButton(
                 icon: const Icon(FluentIcons.folder_open),
-                onPressed: () {
-                  // TODO: implement path picker
+                onPressed: () async {
+                  FilePickerResult? result = await FilePicker.platform
+                      .pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: Platform.isWindows ? ['exe'] : [],
+                      );
+                  if (result != null && result.files.single.path != null) {
+                    final path = result.files.single.path!;
+                    _pythonController.text = path;
+                    settings.setPythonPath(path);
+                  }
                 },
               ),
             ),

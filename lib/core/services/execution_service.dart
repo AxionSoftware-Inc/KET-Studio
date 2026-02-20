@@ -69,8 +69,9 @@ class ExecutionService {
               if (path != null &&
                   !File(path).isAbsolute &&
                   _currentProjectDir != null) {
-                if (payload is Map)
+                if (payload is Map) {
                   payload['path'] = "$_currentProjectDir/$path";
+                }
               }
             }
 
@@ -265,8 +266,9 @@ except Exception:
       final exitCode = await _process!.exitCode;
       _flushTimer?.cancel();
       _vizTimer?.cancel();
-      if (_terminalLines.isNotEmpty)
+      if (_terminalLines.isNotEmpty) {
         terminal.writeLines(List<String>.from(_terminalLines));
+      }
 
       VizService().endSession(
         exitCode: exitCode,
