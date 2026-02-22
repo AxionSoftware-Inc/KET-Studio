@@ -1,38 +1,46 @@
-from qiskit import QuantumCircuit
-from qiskit_aer import Aer
-from qiskit.visualization import plot_histogram
+from qiskit import QuantumCircuit, transpile
+from qiskit_aer import AerSimulator
 import matplotlib.pyplot as plt
+import ket_viz
+import time
 
-# 1. Create a Quantum Circuit acting on a quantum register of two qubits
-circ = QuantumCircuit(2)
+# === KET Studio Demo: Bell State ===
+print("🚀 Preparing Bell State Experiment...")
 
-# 2. Add a H gate on qubit 0, putting this qubit in superposition.
-circ.h(0)
+# 1. Estimation
+ket_viz.estimator({
+    "qubits": 2,
+    "depth": 2,
+    "algorithm": "Bell State (Entanglement)"
+})
 
-# 3. Add a CX (CNOT) gate on control qubit 0 and target qubit 1, putting
-# the qubits in a Bell state.
-circ.cx(0, 1)
+# 2. Build Circuit
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure_all()
 
-# 4. Measure the qubits
-circ.measure_all()
+# 3. Viz Circuit (Automatic Interception)
+print("> Drawing circuit...")
+qc.draw(output='mpl')
+plt.show() # KET Studio will intercept this and show it in the Visualization panel
 
-# 5. Use Aer's qasm_simulator
-simulator = Aer.get_backend('qasm_simulator')
-
-# 6. Execute the circuit on the qasm simulator
-job = simulator.run(circ, shots=1000)
-
-# 7. Grab results from the job
+# 4. Simulation
+print("> Running simulation...")
+simulator = AerSimulator()
+compiled_circuit = transpile(qc, simulator)
+job = simulator.run(compiled_circuit, shots=1024)
 result = job.result()
+counts = result.get_counts()
 
-# 8. Returns counts
-counts = result.get_counts(circ)
-print("\nTotal count for 00 and 11 are:", counts)
+# 5. Result Visualization
+ket_viz.histogram(counts, title="Measurement Results (Entangled)")
 
-# 9. Draw the circuit
-print("\nCircuit Diagram:")
-print(circ.draw())
+# 6. Success Metrics
+ket_viz.metrics({
+    "status": "SUCCESS",
+    "fidelity": 1.0,
+    "shots": 1024
+})
 
-# 10. (Optional) Save the plot if needed
-# circ.draw(output='mpl', filename='circuit.png')
-# plt.show()
+print("✅ Bell State experiment finished.")

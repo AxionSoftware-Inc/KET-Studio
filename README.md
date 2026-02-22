@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="160" />
+  <img src="assets/quantum.jpg" width="160" />
 </p>
 
 <h1 align="center">KET Studio</h1>
@@ -106,7 +106,17 @@ Har qanday dasturlash tilidan quyidagi formatda matn chiqarish orqali panelni bo
 
 ---
 
-## 📜 Litsenziya
+## � Qo'shimcha Hujjatlar va Namunalar
+
+*   **[Event Schema Spec](docs/event_schema.md)**: Vizualizatsiya protokoli bo'yicha to'liq texnik spetsifikatsiya.
+*   **[Misollar (Examples)](examples/)**: 
+    *   `bell_state.py`: Bell holatini simulyatsiya qilish va vizualizatsiya.
+    *   `grover_search.py`: Grover algoritmi va uning bosqichlari.
+    *   `phase_evolution.py`: Kvant holati fazasining vaqt bo'yicha o'zgarishi (Phase Color Evolution).
+
+---
+
+## �📜 Litsenziya
 
 MIT Litsenziyasi ostida tarqatiladi. KET Studio kvant ekotizimini rivojlantirish uchun ochiq manbali loyiha hisoblanadi.
 

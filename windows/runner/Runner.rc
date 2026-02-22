@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "ket_studio" "\0"
+            VALUE "CompanyName", "Axion Software Inc." "\0"
+            VALUE "FileDescription", "KET Studio Professional Quantum IDE" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "ket_studio" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "ket_studio.exe" "\0"
-            VALUE "ProductName", "ket_studio" "\0"
+            VALUE "InternalName", "KETStudio" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Axion Software Inc. All rights reserved." "\0"
+            VALUE "OriginalFilename", "KETStudio.exe" "\0"
+            VALUE "ProductName", "KET Studio" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

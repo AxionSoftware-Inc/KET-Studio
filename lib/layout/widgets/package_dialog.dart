@@ -120,10 +120,10 @@ class PackageDialog extends StatelessWidget {
                             ),
                             if (!isInstalled && !isCurrentTask)
                               Button(
-                                child: const Text("Install"),
                                 onPressed: setup.isBusy
                                     ? null
                                     : () => setup.installPackage(lib),
+                                child: const Text("Install"),
                               )
                             else if (isCurrentTask)
                               const Text(

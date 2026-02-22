@@ -17,6 +17,7 @@ enum VizType {
   metrics,
   estimator,
   histogram,
+  statevector,
   none,
 }
 

@@ -59,6 +59,7 @@ class ExecutionService {
 
       if (kind0 == "quantum" || kind0 == "histogram") kind0 = "histogram";
       if (kind0 == "plot" || kind0 == "chart") kind0 = "chart";
+      if (kind0 == "state" || kind0 == "statevector") kind0 = "statevector";
 
       final type = VizType.values.firstWhere(
         (e) => e.name == kind0.trim(),
@@ -187,6 +188,7 @@ builtins.ket_text = lambda content: _viz("text", {"content": content})
 builtins.ket_inspector = lambda title, frames: _viz("inspector", {"title": title, "frames": frames})
 builtins.ket_metrics = lambda metrics: _viz("metrics", metrics)
 builtins.ket_estimator = lambda estimation: _viz("estimator", estimation)
+builtins.ket_statevector = lambda data, title="Statevector": _viz("statevector", {"amplitudes": data, "title": title})
 
 try:
     import matplotlib
@@ -211,6 +213,7 @@ class _Mock:
         if n == "inspector": return builtins.ket_inspector
         if n == "metrics": return builtins.ket_metrics
         if n == "estimator": return builtins.ket_estimator
+        if n == "statevector": return builtins.ket_statevector
         return lambda *a, **k: _viz(n, a[0] if a else k)
     def __call__(self, k, p): _viz(k, p)
 

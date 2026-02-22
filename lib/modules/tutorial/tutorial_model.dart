@@ -26,81 +26,78 @@ class Tutorial {
 
 final List<Tutorial> quantumTutorials = [
   Tutorial(
-    id: 'qiskit_basics',
-    title: 'Qiskit Asoslari',
-    description: 'Quantum davrlarini yaratish va simulyatsiya qilish.',
+    id: "superposition",
+    title: "Superpozitsiya nima?",
+    description: "Qubitning bir vaqtning o'zida ikkita holatda bo'lishi.",
     sections: [
       TutorialSection(
-        title: 'Quantum Circuit yaratish',
+        title: "Intuittiv yondashuv",
         content:
-            'Qiskit-da eng asosiy element bu `QuantumCircuit` obyekti hisoblanadi.',
-        codeSnippet: '''from qiskit import QuantumCircuit
-
-# 2 ta qubit va 2 ta klassik bitli davra
-qc = QuantumCircuit(2, 2)
-qc.h(0) # Hadamard darvozasi
-qc.cx(0, 1) # CNOT darvozasi
-qc.measure([0,1], [0,1])
-
-print(qc.draw())''',
+            "Tasavvur qiling, sizda tanga bor. U yerga tushguncha havoda aylanadi — u ham 'gerb', ham 'son' holatida bo'ladi. Kvant dunyosida bu 'Superpozitsiya' deyiladi.",
       ),
       TutorialSection(
-        title: 'Backend-da ishlatish',
+        title: "Matematik model",
         content:
-            'Natijalarni olish uchun simulyator yoki real apparatni tanlash kerak.',
-        codeSnippet: '''from qiskit_aer import AerSimulator
-from qiskit import transpile
-
-simulator = AerSimulator()
-compiled_circuit = transpile(qc, simulator)
-job = simulator.run(compiled_circuit, shots=1024)
-result = job.result()
-counts = result.get_counts()
-print(counts)''',
+            "Qubit holati quyidagicha yoziladi: |ψ⟩ = α|0⟩ + β|1⟩. Bunda α va β - ehtimollik amplitudalaridir.",
+        codeSnippet:
+            "from qiskit import QuantumCircuit\nimport ket_viz\n\nqc = QuantumCircuit(1)\nqc.h(0) # Hadamard darvozasi superpozitsiya yaratadi\nprint(\"Superpozitsiya holati yaratildi.\")",
       ),
     ],
   ),
   Tutorial(
-    id: 'quantum_states',
-    title: 'Quantum Holatlar va Matematika',
-    description: 'Bra-ket notatsiyasi va superpozitsiya.',
+    id: "entanglement",
+    title: "Bell Entanglement nima?",
+    description: "Masofadan turib bir-biriga bog'langan qubitlar.",
     sections: [
       TutorialSection(
-        title: 'Superpozitsiya',
+        title: "Spooky Action",
         content:
-            r"Quantum holati qubitning $\alpha|0\rangle + \beta|1\rangle$ ko'rinishidagi kombinatsiyasidir. Bunda $|\alpha|^2 + |\beta|^2 = 1$.",
+            "Ikki qubit 'chigallashganda', ulardan birini o'lchasangiz, ikkinchisi koinotning narigi chekkasida bo'lsa ham, uning holati darhol aniqlanadi.",
       ),
       TutorialSection(
-        title: 'Hadamard Matrix',
+        title: "Bell Holati",
         content:
-            r"Hadamard darvozasi holatni superpozitsiyaga o'tkazadi: $H = \frac{1}{\sqrt{2}} \begin{pmatrix} 1 & 1 \\ 1 & -1 \end{pmatrix}$",
-        codeSnippet: '''# Hadamard darvozasini qo'llash
-qc.h(0)''',
-      ),
-      TutorialSection(
-        title: 'Bloch Sphere',
-        content:
-            "Har bir qubit holatini 3 o'lchamli sferadagi nuqta sifatida tasvirlash mumkin.",
+            "Eng mashhur chigallashgan holat: 1/sqrt(2) * (|00⟩ + |11⟩). Bunda agar birinchi qubit 0 bo'lsa, ikkinchisi ham 100% holatda 0 bo'ladi.",
+        codeSnippet:
+            "from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1) # CNOT darvozasi chigallikni hosil qiladi\nqc.measure_all()",
       ),
     ],
   ),
   Tutorial(
-    id: 'grover_summary',
-    title: 'Grover Algoritmi',
-    description: "Strukturasiz ma'lumotlar bazasidan qidirish.",
+    id: "interference",
+    title: "Interferensiya (Grover)",
+    description: "Ehtimolliklarning bir-birini kuchaytirishi yoki so'ndirish.",
     sections: [
       TutorialSection(
-        title: 'Oracle va Difuziya',
+        title: "To'lqinlar jangi",
         content:
-            r"Grover algoritmi ikki asosiy qismdan iborat: Oracle (qidirilayotgan holatni belgilash) va Diffusion operator (amplituda invertsiyasi).",
+            "Kvant hisoblashda biz xato javoblarni 'so'ndirishimiz' va to'g'ri javobni 'kuchaytirishimiz' kerak. Bu xuddi shovqinni bekor qiluvchi quloqchinlarga o'xshaydi.",
       ),
       TutorialSection(
-        title: 'Amplituda Kuchaytirish',
-        content: r"Iteratsiyalar soni taxminan $O(\sqrt{N})$ ni tashkil etadi.",
-        codeSnippet: '''from qiskit.circuit.library import GroverOperator
-# Grover operatorini yaratish
-# oracle = ...
-# grover_op = GroverOperator(oracle)''',
+        title: "Grover Iteratsiyasi",
+        content:
+            "Grover algoritmi har bir qadamda qidirilayotgan holatning amplitudasini oshirib boradi. 1-iteratsiyadan keyin to'g'ri javob ehtimolligi sezilarli o'sadi.",
+        codeSnippet:
+            "# Grover algoritmi intuitiv qadami\nimport ket_viz\n# 1. Oracle (belgilash)\n# 2. Diffusion (kuchaytirish)\nket_viz.metrics({\"step\": \"Grover 1-iteratsiya\", \"target_prob\": \"o'smoqda\"})",
+      ),
+    ],
+  ),
+  Tutorial(
+    id: "randomness",
+    title: "Measurement Randomness",
+    description: "Kvant olamining tasodifiyligi va kollaps.",
+    sections: [
+      TutorialSection(
+        title: "Kollaps tushunchasi",
+        content:
+            "Qubit o'lchanguniga qadar barcha imkoniyatlarni o'zida saqlaydi. O'lchash jarayonida esa u 'kollaps' bo'ladi va faqat bitta aniq natija (0 yoki 1) beradi.",
+      ),
+      TutorialSection(
+        title: "Ehtimollik",
+        content:
+            "Natija tasodifiy bo'lsa-da, u ma'lum ehtimollikka bo'ysunadi. P(i) = |c_i|^2. Ko'p marta o'lchash (shots) orqali biz bu ehtimollikni ko'ramiz.",
+        codeSnippet:
+            "from qiskit import QuantumCircuit, transpile\nfrom qiskit_aer import AerSimulator\nimport ket_viz\n\nqc = QuantumCircuit(1)\nqc.h(0)\nqc.measure_all()\n\nsim = AerSimulator()\n# 1024 marta o'lchash tasodifiy taqsimotni ko'rsatadi\ncounts = sim.run(transpile(qc, sim), shots=1024).result().get_counts()\nket_viz.histogram(counts, title=\"Tasodifiy natijalar taqsimoti\")",
       ),
     ],
   ),

@@ -149,7 +149,11 @@ class _VizualizationWidgetState extends State<VizualizationWidget> {
     // but for now, we follow the "latest-per-type" pattern consistently.
     final Map<VizType, VizEvent> latestEvents = {};
     for (var e in events) {
-      if (e.type != VizType.none && e.type != VizType.error) {
+      if (e.type != VizType.none &&
+          e.type != VizType.error &&
+          e.type != VizType.metrics &&
+          e.type != VizType.estimator &&
+          e.type != VizType.inspector) {
         latestEvents[e.type] = e;
       }
     }
@@ -909,6 +913,9 @@ Widget _buildVizContent(VizEvent event, {bool isSingle = false}) {
     case VizType.histogram:
       return SizedBox(height: 150, child: _HistogramChart(data: payload));
 
+    case VizType.statevector:
+      return SizedBox(height: 180, child: _StatevectorChart(data: payload));
+
     default:
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -945,7 +952,186 @@ IconData _getIconForType(VizType type) {
       return FluentIcons.bar_chart_vertical;
     case VizType.chart:
       return FluentIcons.line_chart;
+    case VizType.statevector:
+      return FluentIcons.color;
     default:
       return FluentIcons.info;
+  }
+}
+
+class _StatevectorChart extends StatelessWidget {
+  final dynamic data;
+  const _StatevectorChart({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    List<Map<String, dynamic>> amplitudes = [];
+    String? title;
+
+    if (data is List) {
+      for (var item in data) {
+        if (item is Map) {
+          amplitudes.add({
+            'label': item['label']?.toString() ?? '',
+            'mag': (item['mag'] ?? item['r'] ?? 0.0).toDouble(),
+            'phase': (item['phase'] ?? item['phi'] ?? 0.0).toDouble(),
+          });
+        }
+      }
+    } else if (data is Map) {
+      title = data['title']?.toString();
+      final amps = data['amplitudes'] ?? data['data'];
+      if (amps is List) {
+        for (var item in amps) {
+          if (item is Map) {
+            amplitudes.add({
+              'label': item['label']?.toString() ?? '',
+              'mag': (item['mag'] ?? item['r'] ?? 0.0).toDouble(),
+              'phase': (item['phase'] ?? item['phi'] ?? 0.0).toDouble(),
+            });
+          }
+        }
+      } else if (amps is Map) {
+        // Handle {"00": {"mag": 0.5, "phase": 0}, ...}
+        for (var entry in amps.entries) {
+          final val = entry.value;
+          if (val is Map) {
+            amplitudes.add({
+              'label': entry.key.toString(),
+              'mag': (val['mag'] ?? val['r'] ?? 0.0).toDouble(),
+              'phase': (val['phase'] ?? val['phi'] ?? 0.0).toDouble(),
+            });
+          } else if (val is num) {
+            amplitudes.add({
+              'label': entry.key.toString(),
+              'mag': val.toDouble(),
+              'phase': 0.0,
+            });
+          }
+        }
+      }
+    }
+
+    if (amplitudes.isEmpty) {
+      return const Text(
+        "No amplitude data",
+        style: TextStyle(fontSize: 10, color: Colors.grey),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null) ...[
+          _SubHeader(title: title.toUpperCase()),
+          const SizedBox(height: 8),
+        ],
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final barWidth = (constraints.maxWidth / amplitudes.length) - 6;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: amplitudes.map((amp) {
+                  final mag = amp['mag'] as double;
+                  final phase = amp['phase'] as double;
+                  final color = _getPhaseColor(phase);
+
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.0, end: mag),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, animatedMag, _) {
+                          return Container(
+                            width: math.max(barWidth, 8.0),
+                            height:
+                                animatedMag.clamp(0.0, 1.0) *
+                                (constraints.maxHeight - 24),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [color, color.withValues(alpha: 0.4)],
+                              ),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(4),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: color.withValues(alpha: 0.3),
+                                  blurRadius: 10,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        amp['label'],
+                        style: const TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Phase Legend
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _PhaseBadge(phase: 0, label: "0"),
+            _PhaseBadge(phase: math.pi / 2, label: "π/2"),
+            _PhaseBadge(phase: math.pi, label: "π"),
+            _PhaseBadge(phase: -math.pi / 2, label: "-π/2"),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Color _getPhaseColor(double phase) {
+    // phase in radians [-pi, pi]
+    double hue = ((phase + math.pi) / (2 * math.pi)) * 360;
+    return HSVColor.fromAHSV(1.0, hue, 0.7, 0.9).toColor();
+  }
+}
+
+class _PhaseBadge extends StatelessWidget {
+  final double phase;
+  final String label;
+  const _PhaseBadge({required this.phase, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    double hue = ((phase + math.pi) / (2 * math.pi)) * 360;
+    final color = HSVColor.fromAHSV(1.0, hue, 0.7, 0.9).toColor();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 3),
+          Text(label, style: const TextStyle(fontSize: 7, color: Colors.grey)),
+        ],
+      ),
+    );
   }
 }
