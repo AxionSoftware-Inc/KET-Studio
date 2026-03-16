@@ -61,6 +61,13 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
+  msix: ^3.16.7
+
+msix_config:
+  display_name: KET Studio
+  publisher_display_name: AxionSoftware
+  msix_version: 1.0.0.0
+  logo_path: assets/quantum.jpg
 
 flutter_launcher_icons:
   android: "launcher_icon"

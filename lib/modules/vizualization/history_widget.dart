@@ -72,7 +72,7 @@ class VizHistoryWidget extends StatelessWidget {
     return ListTile(
       onPressed: () => service.selectEvent(e),
       tileColor: isSelected
-          ? WidgetStatePropertyAll(KetTheme.accent.withValues(alpha: 0.1))
+          ? WidgetStateColor.resolveWith((states) => KetTheme.accent.withValues(alpha: 0.1))
           : null,
       leading: Icon(
         _getIconForType(e.type),
