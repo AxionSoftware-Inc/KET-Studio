@@ -1,10 +1,12 @@
-import 'dart:io';
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+
+import 'settings_service.dart';
 import 'terminal_service.dart';
 import 'viz_service.dart';
-import 'settings_service.dart';
 
 class ExecutionService {
   static final ExecutionService _instance = ExecutionService._internal();
@@ -14,10 +16,6 @@ class ExecutionService {
   Process? _process;
   final ValueNotifier<bool> isRunning = ValueNotifier(false);
 
-  // PERFORMANCE OPTIMIZATION:
-  // 1. '_terminalLines' and '_scheduleFlush' are used to batch terminal output (every 80ms).
-  // 2. '_vizJsonQueue' stores RAW Strings. We decode only 5 JSON msgs every 60ms
-  //    using '_scheduleVizFlush' to prevent UI thread blocking on large payloads.
   final List<String> _terminalLines = [];
   Timer? _flushTimer;
   final List<String> _vizJsonQueue = [];
@@ -39,7 +37,6 @@ class ExecutionService {
       _vizTimer = null;
       if (_vizJsonQueue.isEmpty) return;
 
-      // Only decode a few at a time to keep UI responsive
       final take = _vizJsonQueue.length > 5 ? 5 : _vizJsonQueue.length;
       for (int i = 0; i < take; i++) {
         _processVizMessage(_vizJsonQueue[i]);
@@ -52,14 +49,14 @@ class ExecutionService {
   void _processVizMessage(String jsonStr) {
     try {
       final msg = jsonDecode(jsonStr) as Map<String, dynamic>;
-      String kind0 = (msg['kind'] ?? msg['type'] ?? "")
+      String kind0 = (msg['kind'] ?? msg['type'] ?? '')
           .toString()
           .toLowerCase();
       final payload = msg['payload'] ?? msg['data'];
 
-      if (kind0 == "quantum" || kind0 == "histogram") kind0 = "histogram";
-      if (kind0 == "plot" || kind0 == "chart") kind0 = "chart";
-      if (kind0 == "state" || kind0 == "statevector") kind0 = "statevector";
+      if (kind0 == 'quantum' || kind0 == 'histogram') kind0 = 'histogram';
+      if (kind0 == 'plot' || kind0 == 'chart') kind0 = 'chart';
+      if (kind0 == 'state' || kind0 == 'statevector') kind0 = 'statevector';
 
       final type = VizType.values.firstWhere(
         (e) => e.name == kind0.trim(),
@@ -67,7 +64,6 @@ class ExecutionService {
       );
 
       if (type != VizType.none) {
-        // Fix relative image paths
         if (type == VizType.image || type == VizType.circuit) {
           String? path = (payload is Map)
               ? payload['path']
@@ -81,7 +77,6 @@ class ExecutionService {
           }
         }
 
-        // Safety: Limit Inspector data size
         if (type == VizType.inspector && payload is Map) {
           final frames = payload['frames'];
           if (frames is List && frames.length > 100) {
@@ -99,10 +94,8 @@ class ExecutionService {
     }
   }
 
-  // CRITICAL: Clean malformed UTF-16 (lone surrogates) which cause crashes in Flutter/SelectableText
   String _safe(String s) {
     try {
-      // Create a safely encoded UTF-16 string by re-encoding as UTF-8 with replacement
       return utf8.decode(utf8.encode(s), allowMalformed: true);
     } catch (_) {
       return s.replaceAll(RegExp(r'[\uD800-\uDFFF]'), '');
@@ -128,7 +121,10 @@ class ExecutionService {
     if (_process != null) stop();
 
     try {
-      terminal.clear();
+      final settings = SettingsService();
+      if (settings.clearTerminalOnRun) {
+        terminal.clear();
+      }
       _terminalLines.clear();
       _vizJsonQueue.clear();
 
@@ -157,7 +153,7 @@ class ExecutionService {
         ).absolute.path.replaceAll(r'\', '/');
       }
 
-      _currentProjectDir = projectDir; // Store for path fixing
+      _currentProjectDir = projectDir;
 
       final outDir = "$projectDir/.ket/out";
       await Directory(outDir).create(recursive: true);
@@ -168,8 +164,6 @@ class ExecutionService {
       final launcherPath = "$tempDir/launcher.py";
       final scriptToRun = actualFilePath.replaceAll(r'\', '/');
 
-      // (launcher code is already good from previous turn)
-      // ... I'll keep the launcher as is but ensure it's provided in full ...
       final launcherCode = """
 import sys, os, json, time, io, runpy
 
@@ -231,7 +225,13 @@ except Exception:
 """;
       await File(launcherPath).writeAsString(launcherCode);
 
-      String executable = SettingsService().pythonPath;
+      final executable = settings.pythonPath;
+      if (settings.showExecutionDetails) {
+        terminal.write("Interpreter: $executable");
+        terminal.write("Project: $projectDir");
+        terminal.write("Entrypoint: $scriptToRun");
+        terminal.write("----------------------------------------");
+      }
 
       _process = await Process.start(
         executable,
@@ -247,7 +247,7 @@ except Exception:
           .listen((line) {
             if (line.isEmpty) return;
             final safeLine = _safe(line);
-            if (safeLine.contains("KET_VIZ")) {
+            if (safeLine.contains('KET_VIZ')) {
               _handleVizLine(safeLine);
               return;
             }
@@ -269,20 +269,18 @@ except Exception:
             if (line.isEmpty) return;
             final safeLine = _safe(line);
             stderrCollector.add(safeLine);
-            _terminalLines.add("❌ $safeLine");
+            _terminalLines.add("ERR $safeLine");
             _scheduleFlush();
           });
 
       final exitCode = await _process!.exitCode;
       _flushTimer?.cancel();
 
-      // Final Terminal Flush
       if (_terminalLines.isNotEmpty) {
         terminal.writeLines(List<String>.from(_terminalLines));
         _terminalLines.clear();
       }
 
-      // CRITICAL: Final Viz Flush - don't lose data if process ends quickly
       _flushVizInstant();
       _vizTimer?.cancel();
 
@@ -295,7 +293,7 @@ except Exception:
       _process = null;
       Future.microtask(() => isRunning.value = false);
     } catch (e) {
-      terminal.write("⚠️ System Error: $e");
+      terminal.write("System Error: $e");
       isRunning.value = false;
     }
   }
@@ -305,11 +303,10 @@ except Exception:
   }
 
   void stop() {
-    if (_process != null) {
-      _process!.kill();
-      _process = null;
-      isRunning.value = false;
-      TerminalService().write("\n🛑 Process stopped by user.");
-    }
+    if (_process == null) return;
+    _process!.kill();
+    _process = null;
+    isRunning.value = false;
+    TerminalService().write("Process stopped by user.");
   }
 }

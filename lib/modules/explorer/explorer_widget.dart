@@ -17,11 +17,13 @@ class _ExplorerWidgetState extends State<ExplorerWidget> {
   void initState() {
     super.initState();
     FileService().addListener(_onFileServiceChanged);
+    EditorService().addListener(_onFileServiceChanged);
   }
 
   @override
   void dispose() {
     FileService().removeListener(_onFileServiceChanged);
+    EditorService().removeListener(_onFileServiceChanged);
     super.dispose();
   }
 
@@ -36,8 +38,8 @@ class _ExplorerWidgetState extends State<ExplorerWidget> {
       children: [
         // Header
         Container(
-          height: 35,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.centerLeft,
           color: KetTheme.bgHeader,
           child: Row(
@@ -45,15 +47,22 @@ class _ExplorerWidgetState extends State<ExplorerWidget> {
             children: [
               Expanded(
                 child: Text(
-                  "EXPLORER: ${rootPath.split(Platform.pathSeparator).last.toUpperCase()}",
-                  style: KetTheme.headerStyle,
+                  rootPath.split(Platform.pathSeparator).last,
+                  style: KetTheme.bodyStyle.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Row(
                 children: [
                   IconButton(
-                    icon: const Icon(FluentIcons.add_notes, size: 14),
+                    icon: Icon(
+                      FluentIcons.add_notes,
+                      size: 12,
+                      color: KetTheme.textMuted,
+                    ),
                     onPressed: () => ExplorerLogic.showNameDialog(
                       context,
                       rootPath,
@@ -62,7 +71,11 @@ class _ExplorerWidgetState extends State<ExplorerWidget> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(FluentIcons.folder_horizontal, size: 14),
+                    icon: Icon(
+                      FluentIcons.folder_horizontal,
+                      size: 12,
+                      color: KetTheme.textMuted,
+                    ),
                     onPressed: () => ExplorerLogic.showNameDialog(
                       context,
                       rootPath,
@@ -71,7 +84,11 @@ class _ExplorerWidgetState extends State<ExplorerWidget> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(FluentIcons.refresh, size: 14),
+                    icon: Icon(
+                      FluentIcons.refresh,
+                      size: 12,
+                      color: KetTheme.textMuted,
+                    ),
                     onPressed: () => setState(() {}),
                   ),
                 ],
@@ -170,6 +187,8 @@ class _FileTreeItemState extends State<FileTreeItem> {
 
     final name = widget.path.split(Platform.pathSeparator).last;
     final isDirectory = FileSystemEntity.isDirectorySync(widget.path);
+    final activePath = EditorService().activeFile?.path;
+    final isActive = !isDirectory && activePath == widget.path;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,11 +208,20 @@ class _FileTreeItemState extends State<FileTreeItem> {
               onPressed: _onTap,
               builder: (context, states) {
                 return Container(
-                  padding: EdgeInsets.only(left: 12.0 * widget.level, right: 8),
-                  height: 28,
-                  color: states.isHovered
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : Colors.transparent,
+                  padding: EdgeInsets.only(left: 10.0 * widget.level, right: 8),
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? KetTheme.accentSoft
+                        : (states.isHovered
+                              ? KetTheme.bgHover
+                              : Colors.transparent),
+                    border: isActive
+                        ? Border(
+                            left: BorderSide(color: KetTheme.accent, width: 2),
+                          )
+                        : null,
+                  ),
                   child: Row(
                     children: [
                       Icon(
@@ -202,25 +230,30 @@ class _FileTreeItemState extends State<FileTreeItem> {
                                   ? FluentIcons.chevron_down
                                   : FluentIcons.chevron_right)
                             : FluentIcons.page_list,
-                        size: isDirectory ? 8 : 14,
+                        size: isDirectory ? 8 : 12,
                         color: isDirectory
-                            ? Colors.grey
-                            : const Color(0xFF599E5E),
+                            ? KetTheme.textMuted
+                            : KetTheme.textSecondary,
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
                       if (isDirectory)
-                        const Icon(
+                        Icon(
                           FluentIcons.folder_horizontal,
-                          size: 14,
-                          color: Color(0xFFDCB67A),
+                          size: 12,
+                          color: KetTheme.warning,
                         ),
-                      if (isDirectory) const SizedBox(width: 6),
+                      if (isDirectory) const SizedBox(width: 5),
                       Expanded(
                         child: Text(
                           name,
-                          style: TextStyle(
-                            color: KetTheme.textMain,
+                          style: KetTheme.bodyStyle.copyWith(
+                            color: isActive
+                                ? KetTheme.textMain
+                                : KetTheme.textSecondary,
                             fontSize: 12,
+                            fontWeight: isActive
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

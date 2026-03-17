@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'settings_service.dart';
 
 class TerminalService extends ChangeNotifier {
   static final TerminalService _instance = TerminalService._internal();
@@ -39,9 +40,9 @@ class TerminalService extends ChangeNotifier {
   }
 
   void _limitLogs() {
-    // Agar 1000 qatordan oshsa, eskilarini o'chiramiz (xotirani tejash uchun)
-    if (_logs.length > 1000) {
-      _logs.removeRange(0, _logs.length - 1000);
+    final maxLines = SettingsService().terminalMaxLines;
+    if (_logs.length > maxLines) {
+      _logs.removeRange(0, _logs.length - maxLines);
     }
   }
 

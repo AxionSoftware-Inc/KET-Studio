@@ -33,7 +33,7 @@ class _MainLayoutState extends State<MainLayout> {
   void initState() {
     super.initState();
     _layout.addListener(() => setState(() {}));
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setupCommands(context);
       if (MenuService().menus.isEmpty) setupMenus(context);
@@ -76,19 +76,19 @@ class _MainLayoutState extends State<MainLayout> {
     Widget horizontalView = Row(
       children: [
         if (activeLeft != null)
-          SizedBox(
-            width: 250,
-            child: PanelHeader(panel: activeLeft, child: activeLeft.buildContent(context)),
+          _buildSidePanel(
+            panel: activeLeft,
+            width: 272,
+            padding: const EdgeInsets.fromLTRB(10, 10, 0, 10),
           ),
-        if (activeLeft != null) Container(width: 1, color: Colors.black),
-        
-        const Expanded(child: EditorWidget()),
-        
-        if (activeRight != null) Container(width: 1, color: Colors.black),
+        const Expanded(
+          child: Padding(padding: EdgeInsets.all(10), child: EditorWidget()),
+        ),
         if (activeRight != null)
-          SizedBox(
-            width: 300,
-            child: PanelHeader(panel: activeRight, child: activeRight.buildContent(context)),
+          _buildSidePanel(
+            panel: activeRight,
+            width: 320,
+            padding: const EdgeInsets.fromLTRB(0, 10, 10, 10),
           ),
       ],
     );
@@ -99,12 +99,28 @@ class _MainLayoutState extends State<MainLayout> {
     return Column(
       children: [
         Expanded(child: horizontalView),
-        Container(height: 1, color: Colors.black),
-        SizedBox(
-          height: 200,
-          child: TerminalWidget(layout: _layout),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          child: SizedBox(height: 220, child: TerminalWidget(layout: _layout)),
         ),
       ],
+    );
+  }
+
+  Widget _buildSidePanel({
+    required ISidePanel panel,
+    required double width,
+    required EdgeInsets padding,
+  }) {
+    return Padding(
+      padding: padding,
+      child: SizedBox(
+        width: width,
+        child: KeyedSubtree(
+          key: ValueKey(panel.id),
+          child: PanelHeader(panel: panel, child: panel.buildContent(context)),
+        ),
+      ),
     );
   }
 }

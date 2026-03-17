@@ -1,5 +1,4 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/material.dart' as m;
 import 'package:ket_studio/plugin_setup.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as flutter_acrylic;
@@ -33,7 +32,9 @@ void main() async {
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
       await windowManager.focus();
-      await windowManager.maximize(); // Dasturni to'liq ekranda ochish
+      if (SettingsService().startMaximized) {
+        await windowManager.maximize();
+      }
     });
   }
 
@@ -61,7 +62,9 @@ class QuantumIDE extends StatelessWidget {
             brightness: Brightness.light,
             accentColor: settings.accentColor.toAccentColor(),
             fontFamily: KetTheme.globalFont.fontFamily,
-            visualDensity: VisualDensity.compact,
+            visualDensity: settings.compactMode
+                ? VisualDensity.compact
+                : VisualDensity.standard,
             scaffoldBackgroundColor: KetTheme.bgCanvas,
             focusTheme: FocusThemeData(
               glowFactor: is10footScreen(context) ? 2.0 : 0.0,
@@ -71,13 +74,12 @@ class QuantumIDE extends StatelessWidget {
             brightness: Brightness.dark,
             accentColor: settings.accentColor.toAccentColor(),
             fontFamily: KetTheme.globalFont.fontFamily,
-            visualDensity: VisualDensity.compact,
+            visualDensity: settings.compactMode
+                ? VisualDensity.compact
+                : VisualDensity.standard,
             scaffoldBackgroundColor: KetTheme.bgCanvas,
           ),
-          home: m.Material(
-            type: m.MaterialType.transparency,
-            child: const MainLayout(),
-          ),
+          home: const MainLayout(),
         );
       },
     );

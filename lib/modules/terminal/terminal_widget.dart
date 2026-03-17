@@ -1,8 +1,9 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import '../../core/theme/ket_theme.dart';
-import '../../core/services/terminal_service.dart';
 import '../../core/services/execution_service.dart';
 import '../../core/services/layout_service.dart';
+import '../../core/services/settings_service.dart';
+import '../../core/services/terminal_service.dart';
+import '../../core/theme/ket_theme.dart';
 
 class TerminalWidget extends StatefulWidget {
   final LayoutService layout;
@@ -18,10 +19,10 @@ class _TerminalWidgetState extends State<TerminalWidget> {
   final _focusNode = FocusNode();
 
   bool _isScrollThrottled = false;
+
   void _scrollToBottom() {
     if (_scrollController.hasClients && !_isScrollThrottled) {
       _isScrollThrottled = true;
-      // Using jumpTo instead of animateTo for performance during high-volume output
       _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
 
       Future.delayed(const Duration(milliseconds: 50), () {
@@ -33,120 +34,161 @@ class _TerminalWidgetState extends State<TerminalWidget> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: TerminalService(),
+      listenable: Listenable.merge([TerminalService(), SettingsService()]),
       builder: (context, _) {
-        // Only trigger scroll if terminal panel is visible and active
-        if (widget.layout.isBottomPanelVisible) {
+        final settings = SettingsService();
+        if (widget.layout.isBottomPanelVisible && settings.terminalAutoScroll) {
           _scrollToBottom();
         }
 
-        return Container(
-          color: KetTheme.bgCanvas,
-          child: Column(
-            children: [
-              // HEADER
-              Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: Colors.black)),
-                  color: KetTheme.bgSidebar,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      FluentIcons.command_prompt,
-                      size: 12,
-                      color: Colors.green,
-                    ),
-                    const SizedBox(width: 8),
-                    Text("TERMINAL", style: KetTheme.headerStyle),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(FluentIcons.delete),
-                      onPressed: () => TerminalService().clear(),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(FluentIcons.chrome_close),
-                      onPressed: () => widget.layout.toggleBottomPanel(),
-                    ),
-                  ],
-                ),
-              ),
-
-              // LOGS
-              Expanded(
-                child: SelectionArea(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: TerminalService().logs.length,
-                    itemBuilder: (context, index) {
-                      final log = TerminalService().logs[index];
-                      return Text(
-                        log,
-                        style: TextStyle(
-                          color: log.startsWith('⚠️') || log.startsWith('❌')
-                              ? Colors.red
-                              : KetTheme.textMain,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          height: 1.3,
+        return DecoratedBox(
+          decoration: KetTheme.panelSurface(
+            elevated: true,
+            radius: KetTheme.radiusLg,
+          ),
+          child: ClipRRect(
+            borderRadius: KetTheme.radiusLg,
+            child: Column(
+              children: [
+                Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: KetTheme.bgHeader,
+                    border: Border(bottom: BorderSide(color: KetTheme.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        FluentIcons.command_prompt,
+                        size: 13,
+                        color: KetTheme.accent,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Terminal",
+                        style: KetTheme.bodyStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Python output",
+                        style: KetTheme.descriptionStyle.copyWith(fontSize: 11),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(
+                          FluentIcons.delete,
+                          size: 14,
+                          color: KetTheme.textMuted,
+                        ),
+                        onPressed: () => TerminalService().clear(),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          FluentIcons.chrome_close,
+                          size: 13,
+                          color: KetTheme.textMuted,
+                        ),
+                        onPressed: () => widget.layout.toggleBottomPanel(),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+                Expanded(
+                  child: SelectionArea(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(14),
+                      itemCount: TerminalService().logs.length,
+                      itemBuilder: (context, index) {
+                        final log = TerminalService().logs[index];
+                        final lower = log.toLowerCase();
+                        final isError =
+                            lower.contains('error') ||
+                            lower.contains('exception') ||
+                            lower.contains('traceback');
 
-              // INPUT
-              Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: Colors.black)),
-                  color: KetTheme.bgSidebar,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      FluentIcons.chevron_right,
-                      color: Colors.green,
-                      size: 14,
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            log,
+                            style: TextStyle(
+                              color: isError
+                                  ? KetTheme.danger
+                                  : KetTheme.textMain,
+                              fontFamily: KetTheme.isWindowsDesktop
+                                  ? 'Cascadia Mono'
+                                  : 'monospace',
+                              fontSize: settings.terminalFontSize,
+                              height: 1.28,
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: TextBox(
-                        controller: _inputController,
-                        focusNode: _focusNode,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontFamily: 'Consolas',
-                          fontSize: 13,
+                  ),
+                ),
+                Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: KetTheme.bgHeader,
+                    border: Border(top: BorderSide(color: KetTheme.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        ">",
+                        style: KetTheme.statusStyle.copyWith(
+                          color: KetTheme.accent,
+                          fontSize: 12,
                         ),
-                        cursorColor: Colors.green,
-                        placeholder: "Python buyrug'ini yozing...",
-                        placeholderStyle: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.24),
-                        ),
-                        decoration: WidgetStateProperty.all(
-                          const BoxDecoration(),
-                        ),
-                        onSubmitted: (text) {
-                          if (text.isNotEmpty) {
-                            TerminalService().write("\$ $text");
-                            ExecutionService().writeToStdin(text);
-                            _inputController.clear();
-                            _focusNode.requestFocus();
-                          }
-                        },
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextBox(
+                          controller: _inputController,
+                          focusNode: _focusNode,
+                          style: TextStyle(
+                            color: KetTheme.textMain,
+                            fontFamily: KetTheme.isWindowsDesktop
+                                ? 'Cascadia Mono'
+                                : 'monospace',
+                            fontSize: settings.terminalFontSize,
+                          ),
+                          cursorColor: KetTheme.accent,
+                          placeholder: "Python buyrug'ini yozing...",
+                          placeholderStyle: TextStyle(
+                            color: KetTheme.textMuted,
+                            fontFamily: KetTheme.isWindowsDesktop
+                                ? 'Cascadia Mono'
+                                : 'monospace',
+                          ),
+                          decoration: WidgetStateProperty.all(
+                            BoxDecoration(
+                              color: KetTheme.bgCanvas.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: KetTheme.border),
+                            ),
+                          ),
+                          onSubmitted: (text) {
+                            if (text.isNotEmpty) {
+                              TerminalService().write("\$ $text");
+                              ExecutionService().writeToStdin(text);
+                              _inputController.clear();
+                              _focusNode.requestFocus();
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

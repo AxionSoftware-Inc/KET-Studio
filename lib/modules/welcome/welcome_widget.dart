@@ -1,9 +1,11 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import '../../core/theme/ket_theme.dart';
-import '../../core/services/editor_service.dart';
-import '../../core/services/command_service.dart';
-import '../templates/templates_service.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import '../../config/demo_content.dart';
+import '../../core/services/command_service.dart';
+import '../../core/services/editor_service.dart';
+import '../../core/theme/ket_theme.dart';
+import '../templates/templates_service.dart';
 
 class WelcomeWidget extends StatelessWidget {
   const WelcomeWidget({super.key});
@@ -11,187 +13,23 @@ class WelcomeWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: KetTheme.bgCanvas,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            KetTheme.bgCanvas,
-            KetTheme.bgCanvas,
-            KetTheme.accent.withValues(alpha: 0.05),
-          ],
-        ),
-      ),
+      color: KetTheme.bgCanvas,
       child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 850),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 80.0,
-                horizontal: 40.0,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Logo & Title
-                  Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: KetTheme.accent.withValues(alpha: 0.2),
-                              blurRadius: 20,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.asset(
-                            'assets/quantum.jpg',
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 32),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              DemoContent.welcomeTitle,
-                              style: const TextStyle(
-                                fontSize: 48,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: -1.0,
-                              ),
-                            ),
-                            Text(
-                              DemoContent.welcomeSubtitle,
-                              style: TextStyle(
-                                fontSize: 20,
-                                color: KetTheme.textMuted,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 60),
-
-                  // Actions Row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Start Section
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildSectionHeader(FluentIcons.play, "START"),
-                            const SizedBox(height: 16),
-                            _buildActionItem(
-                              context,
-                              FluentIcons.page_add,
-                              "New File",
-                              "Create a new quantum script",
-                              () => EditorService().openFile("untitled.py", ""),
-                            ),
-                            _buildActionItem(
-                              context,
-                              FluentIcons.fabric_open_folder_horizontal,
-                              "Open Folder",
-                              "Open an existing project",
-                              () => CommandService().execute("file.openFolder"),
-                            ),
-                            _buildActionItem(
-                              context,
-                              FluentIcons.test_beaker,
-                              "Try Demo",
-                              "See KET Studio in action",
-                              () => EditorService().openFile(
-                                "demo_visualizer.py",
-                                DemoContent.demoScript,
-                              ),
-                              isHighlight: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 40),
-                      // Recent Section
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildSectionHeader(FluentIcons.history, "RECENT"),
-                            const SizedBox(height: 16),
-                            Text(
-                              "No recent projects yet.\nStart by creating a new file.",
-                              style: TextStyle(
-                                color: KetTheme.textMuted,
-                                fontSize: 13,
-                                height: 1.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 40),
-
-                  // Templates Section
-                  _buildSectionHeader(FluentIcons.library, "QUANTUM TEMPLATES"),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: TemplateService.templates.map((tpl) {
-                      return _buildTemplateCard(tpl);
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 80),
-
-                  // Footer
-                  Container(
-                    height: 1,
-                    width: double.infinity,
-                    color: Colors.white.withValues(alpha: 0.1),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      _buildFooterLink(
-                        "Learning Resources",
-                        FluentIcons.reading_mode,
-                      ),
-                      const SizedBox(width: 24),
-                      _buildFooterLink("Quantum Hardware", FluentIcons.iot),
-                      const Spacer(),
-                      Text(
-                        "Alpha v1.0.0",
-                        style: TextStyle(
-                          color: KetTheme.textMuted,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            constraints: const BoxConstraints(maxWidth: 1120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildOverview(),
+                const SizedBox(height: 18),
+                _buildQuickActions(),
+                const SizedBox(height: 18),
+                _buildTemplates(),
+                const SizedBox(height: 18),
+                _buildFooter(),
+              ],
             ),
           ),
         ),
@@ -199,77 +37,301 @@ class WelcomeWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionHeader(IconData icon, String title) {
+  Widget _buildOverview() {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: KetTheme.panelSurface(elevated: true),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "KET STUDIO / CONTROL CENTER",
+            style: KetTheme.headerStyle.copyWith(color: KetTheme.accent),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/quantum.jpg',
+                  width: 72,
+                  height: 72,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Quantum analysis workspace",
+                      style: GoogleFonts.ibmPlexSans(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: KetTheme.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      DemoContent.welcomeSubtitle,
+                      style: KetTheme.bodyStyle.copyWith(
+                        color: KetTheme.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: const [
+              _OverviewChip(
+                title: "Scripts",
+                value: "Python and quantum workflows",
+              ),
+              _OverviewChip(
+                title: "Panels",
+                value: "Inspector, metrics and history",
+              ),
+              _OverviewChip(
+                title: "Execution",
+                value: "Run locally and inspect output",
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: KetTheme.accent),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
+        Expanded(
+          flex: 3,
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: KetTheme.panelSurface(elevated: true),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("ACTIONS", style: KetTheme.headerStyle),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 14,
+                  children: [
+                    _ActionCard(
+                      icon: FluentIcons.page_add,
+                      title: "New file",
+                      subtitle: "Start a fresh experiment or utility script.",
+                      emphasis: true,
+                      onTap: () => EditorService().openFile("untitled.py", ""),
+                    ),
+                    _ActionCard(
+                      icon: FluentIcons.fabric_open_folder_horizontal,
+                      title: "Open folder",
+                      subtitle: "Load an existing workspace from disk.",
+                      onTap: () => CommandService().execute("file.openFolder"),
+                    ),
+                    _ActionCard(
+                      icon: FluentIcons.test_beaker,
+                      title: "Try demo",
+                      subtitle: "Open a prepared visualization sample.",
+                      onTap: () => EditorService().openFile(
+                        "demo_visualizer.py",
+                        DemoContent.demoScript,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          flex: 2,
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: KetTheme.panelSurface(elevated: true),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("WORKSPACE", style: KetTheme.headerStyle),
+                const SizedBox(height: 14),
+                const _InfoRow(
+                  icon: FluentIcons.bulleted_list,
+                  title: "Project state",
+                  description:
+                      "Recent items hali yo'q. Birinchi workspace yarating.",
+                ),
+                const SizedBox(height: 14),
+                const _InfoRow(
+                  icon: FluentIcons.processing,
+                  title: "Visualization",
+                  description:
+                      "Run qiling va natijalarni inspector, charts va history panelda ko'ring.",
+                ),
+                const SizedBox(height: 14),
+                const _InfoRow(
+                  icon: FluentIcons.settings,
+                  title: "Environment",
+                  description:
+                      "Python path va package management ichkaridan boshqariladi.",
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildActionItem(
-    BuildContext context,
-    IconData icon,
-    String title,
-    String subtitle,
-    VoidCallback onTap, {
-    bool isHighlight = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
+  Widget _buildTemplates() {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: KetTheme.panelSurface(elevated: true),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("QUANTUM TEMPLATES", style: KetTheme.headerStyle),
+          const SizedBox(height: 6),
+          Text(
+            "Start from curated examples instead of an empty editor.",
+            style: KetTheme.descriptionStyle,
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 14,
+            runSpacing: 14,
+            children: TemplateService.templates.map((tpl) {
+              return _TemplateCard(tpl: tpl);
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter() {
+    return Row(
+      children: [
+        Text("Learning Resources", style: KetTheme.descriptionStyle),
+        const SizedBox(width: 22),
+        Text("Quantum Hardware", style: KetTheme.descriptionStyle),
+        const Spacer(),
+        Text(
+          "Alpha v1.0.0",
+          style: KetTheme.descriptionStyle.copyWith(fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
+class _OverviewChip extends StatelessWidget {
+  final String title;
+  final String value;
+
+  const _OverviewChip({required this.title, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: KetTheme.bgHeader,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: KetTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: KetTheme.headerStyle.copyWith(color: KetTheme.accent),
+          ),
+          const SizedBox(height: 4),
+          Text(value, style: KetTheme.descriptionStyle),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool emphasis;
+
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.emphasis = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 240,
       child: HoverButton(
         onPressed: onTap,
         builder: (context, states) {
-          return Container(
-            padding: const EdgeInsets.all(12),
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: states.isHovered
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.transparent,
+              color: emphasis
+                  ? KetTheme.accentSoft
+                  : (states.isHovered ? KetTheme.bgHover : KetTheme.bgHeader),
               borderRadius: BorderRadius.circular(8),
-              border: isHighlight && !states.isHovered
-                  ? Border.all(color: KetTheme.accent.withValues(alpha: 0.3))
-                  : null,
+              border: Border.all(
+                color: emphasis
+                    ? KetTheme.accent.withValues(alpha: 0.28)
+                    : KetTheme.border,
+              ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  icon,
-                  size: 24,
-                  color: isHighlight ? KetTheme.accent : KetTheme.textMuted,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isHighlight ? KetTheme.accent : Colors.white,
-                        ),
-                      ),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: KetTheme.textMuted,
-                        ),
-                      ),
-                    ],
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: emphasis ? KetTheme.accent : KetTheme.bgCanvas,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 16,
+                    color: emphasis ? Colors.white : KetTheme.accent,
                   ),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: GoogleFonts.ibmPlexSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: KetTheme.textMain,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(subtitle, style: KetTheme.descriptionStyle),
               ],
             ),
           );
@@ -277,65 +339,113 @@ class WelcomeWidget extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildTemplateCard(QuantumTemplate tpl) {
-    return HoverButton(
-      onPressed: () => TemplateService.useTemplate(tpl),
-      builder: (context, states) {
-        return Container(
-          width: 250,
-          padding: const EdgeInsets.all(12),
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _InfoRow({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
           decoration: BoxDecoration(
-            color: states.isHovered
-                ? Colors.white.withValues(alpha: 0.05)
-                : Colors.white.withValues(alpha: 0.02),
+            color: KetTheme.bgHeader,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: states.isHovered
-                  ? KetTheme.accent.withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.05),
-            ),
           ),
+          child: Icon(icon, size: 15, color: KetTheme.accent),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(tpl.icon, size: 20, color: KetTheme.accent),
-              const SizedBox(height: 8),
               Text(
-                tpl.title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                title,
+                style: GoogleFonts.ibmPlexSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: KetTheme.textMain,
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                tpl.description,
-                style: TextStyle(color: KetTheme.textMuted, fontSize: 11),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
+              Text(description, style: KetTheme.descriptionStyle),
             ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildFooterLink(String text, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 12, color: KetTheme.textMuted),
-        const SizedBox(width: 6),
-        Text(
-          text,
-          style: TextStyle(
-            color: KetTheme.textMuted,
-            fontSize: 12,
-            decoration: TextDecoration.underline,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TemplateCard extends StatelessWidget {
+  final QuantumTemplate tpl;
+
+  const _TemplateCard({required this.tpl});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 260,
+      child: HoverButton(
+        onPressed: () => TemplateService.useTemplate(tpl),
+        builder: (context, states) {
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: states.isHovered ? KetTheme.bgHover : KetTheme.bgHeader,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: states.isHovered
+                    ? KetTheme.accent.withValues(alpha: 0.28)
+                    : KetTheme.border,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: KetTheme.accentSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(tpl.icon, size: 18, color: KetTheme.accent),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  tpl.title,
+                  style: GoogleFonts.ibmPlexSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: KetTheme.textMain,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  tpl.description,
+                  style: KetTheme.descriptionStyle,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

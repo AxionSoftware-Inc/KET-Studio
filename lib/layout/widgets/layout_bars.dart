@@ -1,15 +1,15 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:window_manager/window_manager.dart';
-import '../../core/theme/ket_theme.dart';
-import '../../core/services/menu_service.dart';
-import '../../core/services/execution_service.dart';
-import '../../core/services/editor_service.dart';
-import '../../core/services/layout_service.dart';
-import '../../core/services/python_setup_service.dart';
-import '../../core/services/command_service.dart';
-import '../../core/plugin/plugin_system.dart';
 
-// 1. TOP BAR (Custom Title Bar)
+import '../../core/plugin/plugin_system.dart';
+import '../../core/services/command_service.dart';
+import '../../core/services/editor_service.dart';
+import '../../core/services/execution_service.dart';
+import '../../core/services/layout_service.dart';
+import '../../core/services/menu_service.dart';
+import '../../core/services/python_setup_service.dart';
+import '../../core/theme/ket_theme.dart';
+
 class TopBar extends StatelessWidget {
   const TopBar({super.key});
 
@@ -26,166 +26,214 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 35,
+      height: 48,
       decoration: BoxDecoration(
         color: KetTheme.bgSidebar,
-        border: Border(
-          bottom: BorderSide(color: Colors.black.withValues(alpha: 0.2)),
-        ),
+        border: Border(bottom: BorderSide(color: KetTheme.border)),
       ),
-      child: Row(
-        children: [
-          // 1. LEFT - BRAND & MENUS (Interactive)
-          Padding(
-            padding: const EdgeInsets.only(left: 12.0, right: 8.0),
-            child: Image.asset('assets/quantum.jpg', width: 20, height: 20),
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            const _BrandChip(),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  MenuService(),
+                  CommandService(),
+                  EditorService(),
+                  ExecutionService().isRunning,
+                ]),
+                builder: (context, _) {
+                  return Wrap(
+                    spacing: 2,
+                    children: MenuService().menus.map((group) {
+                      return DropDownButton(
+                        title: Text(group.title, style: KetTheme.menuStyle),
+                        trailing: const SizedBox.shrink(),
+                        style: ButtonStyle(
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                          ),
+                          shape: WidgetStateProperty.all(
+                            RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          backgroundColor: WidgetStateProperty.resolveWith((
+                            states,
+                          ) {
+                            if (states.isHovered) return KetTheme.bgHover;
+                            return Colors.transparent;
+                          }),
+                        ),
+                        items: group.items.map((item) {
+                          if (item.isSeparator) {
+                            return const MenuFlyoutSeparator();
+                          }
 
-          // Main Menus
-          ListenableBuilder(
-            listenable: Listenable.merge([
-              MenuService(),
-              CommandService(),
-              EditorService(),
-              ExecutionService().isRunning,
-            ]),
-            builder: (context, _) {
-              return Row(
-                children: MenuService().menus.map((group) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                    child: DropDownButton(
-                      title: Text(group.title, style: KetTheme.menuStyle),
-                      trailing: SizedBox.shrink(),
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith((
-                          states,
-                        ) {
-                          if (states.isHovered) return KetTheme.bgHover;
-                          return Colors.transparent;
-                        }),
-                        shape: WidgetStateProperty.all(
-                          RoundedRectangleBorder(
-                            side: BorderSide.none,
-                            borderRadius: BorderRadius.zero,
-                          ),
-                        ),
-                        padding: WidgetStateProperty.all(
-                          const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                        ),
-                      ),
-                      items: group.items.map((item) {
-                        if (item.isSeparator) {
-                          return const MenuFlyoutSeparator();
-                        }
-                        final cmd = item.command;
-                        if (cmd == null) {
-                          return const MenuFlyoutSeparator();
-                        }
-                        return MenuFlyoutItem(
-                          leading: cmd.icon != null
-                              ? Icon(cmd.icon, size: 14)
-                              : null,
-                          text: Text(item.label, style: KetTheme.menuStyle),
-                          onPressed: (cmd.isEnabled == null || cmd.isEnabled!())
-                              ? cmd.action
-                              : null,
-                          trailing: cmd.shortcut != null
-                              ? Text(
-                                  cmd.shortcut!,
-                                  style: KetTheme.menuStyle.copyWith(
-                                    color: KetTheme.textMuted,
-                                    fontSize: 10,
-                                  ),
-                                )
-                              : null,
-                        );
-                      }).toList(),
-                    ),
+                          final cmd = item.command;
+                          if (cmd == null) {
+                            return const MenuFlyoutSeparator();
+                          }
+
+                          return MenuFlyoutItem(
+                            leading: cmd.icon != null
+                                ? Icon(
+                                    cmd.icon,
+                                    size: 14,
+                                    color: KetTheme.textSecondary,
+                                  )
+                                : null,
+                            text: Text(
+                              item.label,
+                              style: KetTheme.menuStyle.copyWith(
+                                color: KetTheme.textMain,
+                              ),
+                            ),
+                            onPressed:
+                                (cmd.isEnabled == null || cmd.isEnabled!())
+                                ? cmd.action
+                                : null,
+                            trailing: cmd.shortcut != null
+                                ? Text(
+                                    cmd.shortcut!,
+                                    style: KetTheme.menuStyle.copyWith(
+                                      color: KetTheme.textMuted,
+                                      fontSize: 10,
+                                    ),
+                                  )
+                                : null,
+                          );
+                        }).toList(),
+                      );
+                    }).toList(),
                   );
-                }).toList(),
-              );
-            },
-          ),
-          // 2. CENTER - DRAG AREA (Non-interactive)
-          Expanded(child: MoveWindow(child: SizedBox.expand())),
-
-          // 3. RIGHT - ACTIONS (Interactive)
-          ValueListenableBuilder<bool>(
-            valueListenable: ExecutionService().isRunning,
-            builder: (context, running, child) {
-              return Row(
-                children: [
-                  const SizedBox(width: 12),
-                  if (running)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: Tooltip(
-                        message: "Stop Execution",
-                        child: IconButton(
-                          icon: const Icon(
-                            FluentIcons.stop,
-                            color: Color(0xFFFF0000),
-                            size: 16,
-                          ),
-                          onPressed: () => ExecutionService().stop(),
-                        ),
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: MoveWindow(child: const SizedBox.expand())),
+            const SizedBox(width: 8),
+            ValueListenableBuilder<bool>(
+              valueListenable: ExecutionService().isRunning,
+              builder: (context, running, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (running)
+                      _ActionPill(
+                        icon: FluentIcons.stop,
+                        label: "Stop",
+                        fill: KetTheme.danger.withValues(alpha: 0.14),
+                        iconColor: KetTheme.danger,
+                        onPressed: () => ExecutionService().stop(),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: FilledButton(
+                    if (running) const SizedBox(width: 6),
+                    _ActionPill(
+                      icon: running
+                          ? FluentIcons.progress_ring_dots
+                          : FluentIcons.play,
+                      label: running ? "Running" : "Run",
+                      fill: running ? KetTheme.accentSoft : KetTheme.accent,
+                      iconColor: Colors.white,
+                      textColor: Colors.white,
                       onPressed: running ? null : _handleRun,
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith((
-                          states,
-                        ) {
-                          if (running) {
-                            return Colors.grey.withValues(alpha: 0.2);
-                          }
-                          if (states.isHovered) {
-                            return Colors.green.withValues(alpha: 0.8);
-                          }
-                          return Colors.green;
-                        }),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            running
-                                ? FluentIcons.progress_ring_dots
-                                : FluentIcons.play,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            "RUN",
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-
-          Tooltip(
-            message: "Settings (Ctrl+,)",
-            child: IconButton(
-              icon: const Icon(FluentIcons.settings, size: 14),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+            _CircleIconButton(
+              icon: FluentIcons.settings,
+              tooltip: "Settings (Ctrl+,)",
               onPressed: () => CommandService().execute("settings.open"),
             ),
+            const SizedBox(width: 8),
+            const WindowButtons(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BrandChip extends StatelessWidget {
+  const _BrandChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Image.asset('assets/quantum.jpg', width: 18, height: 18),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          "KET Studio",
+          style: KetTheme.bodyStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 12.5,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color fill;
+  final Color? iconColor;
+  final Color? textColor;
+  final VoidCallback? onPressed;
+
+  const _ActionPill({
+    required this.icon,
+    required this.label,
+    required this.fill,
+    this.iconColor,
+    this.textColor,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Button(
+      onPressed: onPressed,
+      style: ButtonStyle(
+        padding: WidgetStateProperty.all(
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        shape: WidgetStateProperty.all(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.isDisabled) return fill.withValues(alpha: 0.45);
+          if (states.isHovered) return fill.withValues(alpha: 0.88);
+          return fill;
+        }),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: iconColor ?? KetTheme.textMain),
           const SizedBox(width: 8),
-          const Divider(direction: Axis.vertical),
-          const SizedBox(width: 8),
-          const WindowButtons(),
+          Text(
+            label.toUpperCase(),
+            style: KetTheme.statusStyle.copyWith(
+              fontSize: 10,
+              color: textColor ?? KetTheme.textMain,
+            ),
+          ),
         ],
       ),
     );
@@ -194,13 +242,12 @@ class TopBar extends StatelessWidget {
 
 class MoveWindow extends StatelessWidget {
   final Widget child;
+
   const MoveWindow({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return DragToMoveArea(
-      child: Container(color: Colors.transparent, child: child),
-    );
+    return DragToMoveArea(child: child);
   }
 }
 
@@ -211,23 +258,28 @@ class WindowButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        WindowButton(
+        _CircleIconButton(
           icon: FluentIcons.chrome_minimize,
+          tooltip: "Minimize",
           onPressed: () => windowManager.minimize(),
         ),
-        WindowButton(
+        const SizedBox(width: 6),
+        _CircleIconButton(
           icon: FluentIcons.chrome_full_screen,
+          tooltip: "Maximize",
           onPressed: () async {
             if (await windowManager.isMaximized()) {
-              windowManager.unmaximize();
+              await windowManager.unmaximize();
             } else {
-              windowManager.maximize();
+              await windowManager.maximize();
             }
           },
         ),
-        WindowButton(
+        const SizedBox(width: 6),
+        _CircleIconButton(
           icon: FluentIcons.chrome_close,
-          isClose: true,
+          tooltip: "Close",
+          hoverColor: KetTheme.danger,
           onPressed: () => windowManager.close(),
         ),
       ],
@@ -235,33 +287,51 @@ class WindowButtons extends StatelessWidget {
   }
 }
 
-class WindowButton extends StatelessWidget {
+class _CircleIconButton extends StatelessWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback onPressed;
-  final bool isClose;
+  final Color? hoverColor;
 
-  const WindowButton({
-    super.key,
+  const _CircleIconButton({
     required this.icon,
+    required this.tooltip,
     required this.onPressed,
-    this.isClose = false,
+    this.hoverColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return HoverButton(
-      onPressed: onPressed,
-      builder: (context, states) {
-        final isHovered = states.isHovered;
-        return Container(
-          width: 45,
-          height: 32,
-          color: isHovered
-              ? (isClose ? Colors.red : Colors.white.withValues(alpha: 0.1))
-              : Colors.transparent,
-          child: Center(child: Icon(icon, size: 12, color: Colors.white)),
-        );
-      },
+    return Tooltip(
+      message: tooltip,
+      child: HoverButton(
+        onPressed: onPressed,
+        builder: (context, states) {
+          final fill = states.isHovered
+              ? (hoverColor ?? KetTheme.bgHover)
+              : KetTheme.bgHeader;
+          return Container(
+            width: 30,
+            height: 28,
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: states.isHovered && hoverColor != null
+                    ? hoverColor!.withValues(alpha: 0.4)
+                    : KetTheme.border,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 10,
+              color: hoverColor != null && states.isHovered
+                  ? Colors.white
+                  : KetTheme.textSecondary,
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -280,71 +350,89 @@ class ActivityBar extends StatelessWidget {
         final panels = isLeft
             ? PluginRegistry().leftPanels
             : PluginRegistry().rightPanels;
-        if (panels.isEmpty) return const SizedBox();
+        if (panels.isEmpty) return const SizedBox.shrink();
 
-        return Container(
-          width: 48,
-          decoration: BoxDecoration(
-            color: KetTheme.bgActivityBar,
-            border: Border(
-              right: isLeft
-                  ? BorderSide(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      width: 1,
-                    )
-                  : BorderSide.none,
-              left: !isLeft
-                  ? BorderSide(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      width: 1,
-                    )
-                  : BorderSide.none,
-            ),
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            isLeft ? 10 : 0,
+            10,
+            isLeft ? 0 : 10,
+            10,
           ),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              ...panels.map((panel) {
-                bool isActive = isLeft
-                    ? layout.activeLeftPanelId == panel.id
-                    : layout.activeRightPanelId == panel.id;
+          child: Container(
+            width: 44,
+            decoration: KetTheme.panelSurface(radius: KetTheme.radiusMd),
+            child: Column(
+              children: [
+                const SizedBox(height: 6),
+                ...panels.map((panel) {
+                  final isActive = isLeft
+                      ? layout.activeLeftPanelId == panel.id
+                      : layout.activeRightPanelId == panel.id;
 
-                return SizedBox(
-                  height: 48,
-                  width: 48,
-                  child: Stack(
-                    alignment: isLeft
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight,
-                    children: [
-                      if (isActive)
-                        Container(width: 2, height: 28, color: KetTheme.accent),
-                      Center(
-                        child: Tooltip(
-                          message: panel.title,
-                          child: IconButton(
-                            icon: Icon(
-                              panel.icon,
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: HoverButton(
+                      onPressed: () {
+                        if (isLeft) {
+                          layout.toggleLeftPanel(panel.id);
+                        } else {
+                          layout.toggleRightPanel(panel.id);
+                        }
+                      },
+                      builder: (context, states) {
+                        return Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? KetTheme.accentSoft
+                                : (states.isHovered
+                                      ? KetTheme.bgHover
+                                      : Colors.transparent),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
                               color: isActive
-                                  ? Colors.white
-                                  : KetTheme.textMuted,
-                              size: 18,
+                                  ? KetTheme.accent.withValues(alpha: 0.35)
+                                  : Colors.transparent,
                             ),
-                            onPressed: () {
-                              if (isLeft) {
-                                layout.toggleLeftPanel(panel.id);
-                              } else {
-                                layout.toggleRightPanel(panel.id);
-                              }
-                            },
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (isActive)
+                                Positioned(
+                                  left: isLeft ? 0 : null,
+                                  right: isLeft ? null : 0,
+                                  child: Container(
+                                    width: 2,
+                                    height: 12,
+                                    color: KetTheme.accent,
+                                  ),
+                                ),
+                              Icon(
+                                panel.icon,
+                                size: 15,
+                                color: isActive
+                                    ? KetTheme.accent
+                                    : KetTheme.textMuted,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                }),
+                const Spacer(),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  width: 20,
+                  height: 1,
+                  color: KetTheme.borderStrong,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -354,16 +442,8 @@ class ActivityBar extends StatelessWidget {
 
 class StatusBar extends StatelessWidget {
   final LayoutService layout;
-  const StatusBar({super.key, required this.layout});
 
-  Widget _buildSeparator() {
-    return Container(
-      width: 1,
-      height: 16,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      color: Colors.white.withValues(alpha: 0.24),
-    );
-  }
+  const StatusBar({super.key, required this.layout});
 
   @override
   Widget build(BuildContext context) {
@@ -380,168 +460,109 @@ class StatusBar extends StatelessWidget {
         final activeFile = editor.activeFile;
 
         return Container(
-          height: 24,
-          color: KetTheme.accent,
-          child: Row(
-            children: [
-              HoverButton(
-                onPressed: () => layout.toggleBottomPanel(),
-                builder: (context, states) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    color: states.isHovered
-                        ? Colors.white.withValues(alpha: 0.1)
-                        : Colors.transparent,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          FluentIcons.command_prompt,
-                          size: 11,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "TERMINAL",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(width: 10),
-
-              if (activeFile != null)
-                Text(
-                  activeFile.path.startsWith('/fake')
-                      ? activeFile.name
-                      : activeFile.path,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 11,
-                  ),
+          height: 38,
+          decoration: BoxDecoration(
+            color: KetTheme.bgSidebar,
+            border: Border(top: BorderSide(color: KetTheme.border)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _StatusChip(
+                  icon: FluentIcons.command_prompt,
+                  label: "Terminal",
+                  onTap: () => layout.toggleBottomPanel(),
                 ),
-
-              const Spacer(),
-
-              _buildSeparator(),
-
-              if (setup.isSetupComplete)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        FluentIcons.product_variant,
-                        size: 10,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "Qiskit: ${setup.qiskitVersion}",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              _buildSeparator(),
-
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    Icon(
-                      setup.isSetupComplete
-                          ? FluentIcons.completed
-                          : FluentIcons.sync_status,
-                      size: 10,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 6),
-                    ValueListenableBuilder<String?>(
-                      valueListenable: setup.currentTask,
-                      builder: (context, task, _) {
-                        return Text(
-                          task ??
-                              (setup.isSetupComplete
-                                  ? "Env: Ready"
-                                  : "Env: Initializing"),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              _buildSeparator(),
-
-              if (activeFile != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    "Ln ${editor.cursorLine}, Col ${editor.cursorColumn}",
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                    activeFile == null
+                        ? "Quantum workspace ready"
+                        : (activeFile.path.startsWith('/fake')
+                              ? activeFile.name
+                              : activeFile.path),
+                    style: KetTheme.descriptionStyle,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-
-              _buildSeparator(),
-
-              ValueListenableBuilder<bool>(
-                valueListenable: exec.isRunning,
-                builder: (context, running, _) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        if (running) ...[
-                          const SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: ProgressRing(
-                              strokeWidth: 1.5,
-                              value: null,
-                              activeColor: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Text(
-                          running ? "Python Running" : "Engine: Idle",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              _buildSeparator(),
-
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12.0),
-                child: Text(
-                  "Alpha v1.0.0",
-                  style: TextStyle(color: Colors.white, fontSize: 11),
+                _StatusInfo(
+                  icon: setup.isSetupComplete
+                      ? FluentIcons.completed
+                      : FluentIcons.sync_status,
+                  label: setup.isSetupComplete ? "Env ready" : "Env loading",
                 ),
+                const SizedBox(width: 8),
+                if (setup.isSetupComplete)
+                  _StatusInfo(
+                    icon: FluentIcons.product_variant,
+                    label: "Qiskit ${setup.qiskitVersion}",
+                  ),
+                if (activeFile != null) const SizedBox(width: 8),
+                if (activeFile != null)
+                  _StatusInfo(
+                    icon: FluentIcons.edit,
+                    label:
+                        "Ln ${editor.cursorLine}, Col ${editor.cursorColumn}",
+                  ),
+                const SizedBox(width: 8),
+                ValueListenableBuilder<bool>(
+                  valueListenable: exec.isRunning,
+                  builder: (context, running, _) {
+                    return _StatusInfo(
+                      icon: running
+                          ? FluentIcons.progress_ring_dots
+                          : FluentIcons.play_resume,
+                      label: running ? "Python running" : "Engine idle",
+                      highlight: running,
+                    );
+                  },
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "Alpha v1.0.0",
+                  style: KetTheme.descriptionStyle.copyWith(fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _StatusChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return HoverButton(
+      onPressed: onTap,
+      builder: (context, states) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: states.isHovered ? KetTheme.bgHover : KetTheme.accentSoft,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: KetTheme.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: KetTheme.accent),
+              const SizedBox(width: 7),
+              Text(
+                label.toUpperCase(),
+                style: KetTheme.headerStyle.copyWith(color: KetTheme.textMain),
               ),
             ],
           ),
@@ -551,30 +572,106 @@ class StatusBar extends StatelessWidget {
   }
 }
 
-class PanelHeader extends StatelessWidget {
-  final ISidePanel panel;
-  final Widget child;
-  const PanelHeader({super.key, required this.panel, required this.child});
+class _StatusInfo extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool highlight;
+
+  const _StatusInfo({
+    required this.icon,
+    required this.label,
+    this.highlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: KetTheme.bgSidebar,
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: highlight ? KetTheme.accentSoft : KetTheme.bgHeader,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: highlight
+              ? KetTheme.accent.withValues(alpha: 0.3)
+              : KetTheme.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            height: 35,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(panel.title.toUpperCase(), style: KetTheme.headerStyle),
-                Icon(FluentIcons.more, color: KetTheme.textMain, size: 14),
-              ],
+          Icon(
+            icon,
+            size: 11,
+            color: highlight ? KetTheme.accent : KetTheme.textSecondary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: KetTheme.statusStyle.copyWith(
+              color: highlight ? KetTheme.textMain : KetTheme.textSecondary,
             ),
           ),
-          Expanded(child: child),
         ],
+      ),
+    );
+  }
+}
+
+class PanelHeader extends StatelessWidget {
+  final ISidePanel panel;
+  final Widget child;
+
+  const PanelHeader({super.key, required this.panel, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: DecoratedBox(
+        decoration: KetTheme.panelSurface(
+          elevated: true,
+          radius: KetTheme.radiusMd,
+        ),
+        child: ClipRRect(
+          borderRadius: KetTheme.radiusMd,
+          child: Column(
+            children: [
+              Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: KetTheme.bgHeader,
+                  border: Border(bottom: BorderSide(color: KetTheme.border)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(panel.icon, size: 14, color: KetTheme.accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        panel.title,
+                        style: KetTheme.bodyStyle.copyWith(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      panel.id,
+                      style: KetTheme.statusStyle.copyWith(
+                        color: KetTheme.textMuted,
+                        fontSize: 9.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: KeyedSubtree(key: ValueKey(panel.id), child: child),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
