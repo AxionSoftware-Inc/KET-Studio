@@ -29,10 +29,14 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   final LayoutService _layout = LayoutService();
 
+  void _handleLayoutChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
-    _layout.addListener(() => setState(() {}));
+    _layout.addListener(_handleLayoutChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setupCommands(context);
@@ -43,12 +47,18 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   @override
+  void dispose() {
+    _layout.removeListener(_handleLayoutChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       color: KetTheme.bgCanvas,
       child: Column(
         children: [
-          const TopBar(),
+          TopBar(layout: _layout),
           Expanded(
             child: Row(
               children: [

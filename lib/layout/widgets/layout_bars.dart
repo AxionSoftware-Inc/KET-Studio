@@ -11,7 +11,9 @@ import '../../core/services/python_setup_service.dart';
 import '../../core/theme/ket_theme.dart';
 
 class TopBar extends StatelessWidget {
-  const TopBar({super.key});
+  final LayoutService layout;
+
+  const TopBar({super.key, required this.layout});
 
   void _handleRun() async {
     final activeFile = EditorService().activeFile;
@@ -26,7 +28,7 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
+      height: 54,
       decoration: BoxDecoration(
         color: KetTheme.bgSidebar,
         border: Border(bottom: BorderSide(color: KetTheme.border)),
@@ -36,7 +38,7 @@ class TopBar extends StatelessWidget {
         child: Row(
           children: [
             const _BrandChip(),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             Expanded(
               child: ListenableBuilder(
                 listenable: Listenable.merge([
@@ -117,7 +119,19 @@ class TopBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(child: MoveWindow(child: const SizedBox.expand())),
+            Expanded(
+              child: MoveWindow(
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    layout.activeWorkspacePreset.description,
+                    style: KetTheme.descriptionStyle,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(width: 8),
             ValueListenableBuilder<bool>(
               valueListenable: ExecutionService().isRunning,
@@ -162,6 +176,8 @@ class TopBar extends StatelessWidget {
     );
   }
 }
+
+// Removed WorkspaceTabs as requested
 
 class _BrandChip extends StatelessWidget {
   const _BrandChip();
@@ -347,9 +363,14 @@ class ActivityBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: layout,
       builder: (context, _) {
-        final panels = isLeft
+        final allowedPanelIds = isLeft
+            ? layout.allowedLeftPanelIds
+            : layout.allowedRightPanelIds;
+        final panels = (isLeft
             ? PluginRegistry().leftPanels
-            : PluginRegistry().rightPanels;
+            : PluginRegistry().rightPanels)
+            .where((panel) => allowedPanelIds.contains(panel.id))
+            .toList();
         if (panels.isEmpty) return const SizedBox.shrink();
 
         return Padding(
@@ -452,6 +473,7 @@ class StatusBar extends StatelessWidget {
         EditorService(),
         ExecutionService().isRunning,
         PythonSetupService(),
+        layout,
       ]),
       builder: (context, _) {
         final editor = EditorService();
@@ -469,11 +491,17 @@ class StatusBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                _StatusChip(
-                  icon: FluentIcons.command_prompt,
-                  label: "Terminal",
-                  onTap: () => layout.toggleBottomPanel(),
+                _StatusInfo(
+                  icon: layout.activeWorkspacePreset.icon,
+                  label: layout.activeWorkspacePreset.label,
                 ),
+                if (layout.supportsBottomPanel) const SizedBox(width: 8),
+                if (layout.supportsBottomPanel)
+                  _StatusChip(
+                    icon: FluentIcons.command_prompt,
+                    label: "Terminal",
+                    onTap: () => layout.toggleBottomPanel(),
+                  ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

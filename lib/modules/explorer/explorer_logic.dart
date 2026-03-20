@@ -9,9 +9,11 @@ class ExplorerLogic {
   static void showContextMenu(
     BuildContext context,
     String path,
-    FlyoutController controller,
-    VoidCallback onRefresh,
-  ) {
+    FlyoutController controller, {
+    required VoidCallback onRefresh,
+    required VoidCallback onCreateFile,
+    required VoidCallback onCreateFolder,
+  }) {
     bool isDirectory = FileSystemEntity.isDirectorySync(path);
 
     controller.showFlyout(
@@ -22,22 +24,12 @@ class ExplorerLogic {
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.page_add, size: 14),
                 text: const Text('New File'),
-                onPressed: () => showNameDialog(
-                  context,
-                  path,
-                  isFile: true,
-                  onDone: onRefresh,
-                ),
+                onPressed: onCreateFile,
               ),
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.folder_horizontal, size: 14),
                 text: const Text('New Folder'),
-                onPressed: () => showNameDialog(
-                  context,
-                  path,
-                  isFile: false,
-                  onDone: onRefresh,
-                ),
+                onPressed: onCreateFolder,
               ),
               const MenuFlyoutSeparator(),
             ],
@@ -76,6 +68,11 @@ class ExplorerLogic {
                   showRenameDialog(context, path, onDone: onRefresh),
             ),
             MenuFlyoutItem(
+              leading: const Icon(FluentIcons.move, size: 14),
+              text: const Text('Move to...'),
+              onPressed: () => showMoveDialog(context, path, onDone: onRefresh),
+            ),
+            MenuFlyoutItem(
               leading: Icon(FluentIcons.delete, size: 14, color: Colors.red),
               text: Text('Delete', style: TextStyle(color: Colors.red)),
               onPressed: () => deleteItem(context, path, onRefresh),
@@ -92,55 +89,22 @@ class ExplorerLogic {
     );
   }
 
-  static void showNameDialog(
+  static void showMoveDialog(
     BuildContext context,
-    String parentPath, {
-    required bool isFile,
+    String oldPath, {
     required VoidCallback onDone,
-  }) {
-    if (FileSystemEntity.isFileSync(parentPath)) {
-      parentPath = File(parentPath).parent.path;
+  }) async {
+    final name = oldPath.split(Platform.pathSeparator).last;
+    final String? newParent = await FileService().pickDirectory();
+    if (newParent != null) {
+      final newPath = "$newParent${Platform.pathSeparator}$name";
+      try {
+        await FileService().moveEntity(oldPath, newPath);
+        onDone();
+      } catch (e) {
+        debugPrint("Move error: $e");
+      }
     }
-
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: Text(isFile ? "New File" : "New Folder"),
-        content: TextBox(
-          controller: controller,
-          placeholder: "Enter name...",
-          autofocus: true,
-        ),
-        actions: [
-          Button(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                final fullPath = "$parentPath${Platform.pathSeparator}$name";
-                try {
-                  if (isFile) {
-                    await FileService().createFile(fullPath);
-                  } else {
-                    await FileService().createFolder(fullPath);
-                  }
-                  onDone();
-                  if (context.mounted) Navigator.pop(context);
-                } catch (e) {
-                  debugPrint("Error creating: $e");
-                }
-              }
-            },
-            child: const Text("Create"),
-          ),
-        ],
-      ),
-    );
   }
 
   static void showRenameDialog(
@@ -155,7 +119,25 @@ class ExplorerLogic {
       context: context,
       builder: (context) => ContentDialog(
         title: const Text("Rename"),
-        content: TextBox(controller: controller, autofocus: true),
+        content: TextBox(
+          controller: controller,
+          autofocus: true,
+          onSubmitted: (_) async {
+            final newName = controller.text.trim();
+            if (newName.isNotEmpty) {
+              try {
+                final parentPath = File(oldPath).parent.path;
+                final newPath = "$parentPath${Platform.pathSeparator}$newName";
+                await FileService().renameEntity(oldPath, newName);
+                EditorService().renameFile(oldPath, newPath);
+                onDone();
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                debugPrint("Rename error: $e");
+              }
+            }
+          },
+        ),
         actions: [
           Button(
             onPressed: () => Navigator.pop(context),

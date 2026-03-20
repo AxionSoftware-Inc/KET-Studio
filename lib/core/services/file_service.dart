@@ -118,6 +118,15 @@ class FileService extends ChangeNotifier {
     }
   }
 
+  // Move
+  Future<void> moveEntity(String oldPath, String newPath) async {
+    if (await FileSystemEntity.isDirectory(oldPath)) {
+      await Directory(oldPath).rename(newPath);
+    } else {
+      await File(oldPath).rename(newPath);
+    }
+  }
+
   // 5. Reveal in Explorer (Windows)
   Future<void> revealInExplorer(String path) async {
     if (Platform.isWindows) {

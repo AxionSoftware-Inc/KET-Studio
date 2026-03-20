@@ -7,7 +7,7 @@ class ExplorerPlugin implements ISidePanel {
   String get id => 'explorer';
 
   @override
-  IconData get icon => FluentIcons.fabric_folder_search;
+  IconData get icon => FluentIcons.folder_horizontal;
 
   @override
   String get title => 'EXPLORER';
