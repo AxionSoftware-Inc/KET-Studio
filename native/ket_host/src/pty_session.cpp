@@ -1,6 +1,5 @@
 #include "pty_session.hpp"
 
-#include <atomic>
 #include <cerrno>
 #include <csignal>
 #include <cstring>
@@ -38,6 +37,18 @@ class PosixPtySession final : public PtySession {
   }
 
   [[nodiscard]] std::string id() const override { return id_; }
+
+  std::size_t read(std::span<std::uint8_t> buffer) override {
+    for (;;) {
+      const auto count = ::read(master_fd_, buffer.data(), buffer.size());
+      if (count > 0) return static_cast<std::size_t>(count);
+      if (count == 0) return 0;
+      if (errno == EINTR) continue;
+      if (errno == EIO) return 0;  // PTY slave closed after child exit.
+      throw std::runtime_error(std::string("PTY read failed: ") +
+                               std::strerror(errno));
+    }
+  }
 
   void write(std::span<const std::uint8_t> bytes) override {
     std::size_t offset = 0;
