@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <span>
 #include <string>
@@ -18,6 +19,7 @@ struct LaunchSpec {
   std::string executable;
   std::vector<std::string> arguments;
   std::string working_directory;
+  std::map<std::string, std::string> environment;
   TerminalSize size;
 };
 

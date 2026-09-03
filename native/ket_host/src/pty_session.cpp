@@ -7,6 +7,10 @@
 #include <string>
 #include <utility>
 
+#if defined(KET_PLATFORM_WINDOWS)
+#include "conpty_session.hpp"
+#endif
+
 #if defined(KET_PLATFORM_POSIX)
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -31,9 +35,7 @@ class PosixPtySession final : public PtySession {
   }
 
   ~PosixPtySession() override {
-    if (master_fd_ >= 0) {
-      ::close(master_fd_);
-    }
+    if (master_fd_ >= 0) ::close(master_fd_);
   }
 
   [[nodiscard]] std::string id() const override { return id_; }
@@ -44,7 +46,7 @@ class PosixPtySession final : public PtySession {
       if (count > 0) return static_cast<std::size_t>(count);
       if (count == 0) return 0;
       if (errno == EINTR) continue;
-      if (errno == EIO) return 0;  // PTY slave closed after child exit.
+      if (errno == EIO) return 0;
       throw std::runtime_error(std::string("PTY read failed: ") +
                                std::strerror(errno));
     }
@@ -128,8 +130,13 @@ std::unique_ptr<PtySession> create_pty_session(const LaunchSpec& spec) {
   if (spec.executable.empty()) {
     throw std::invalid_argument("PTY executable must not be empty");
   }
+  if (spec.size.columns == 0 || spec.size.rows == 0) {
+    throw std::invalid_argument("PTY dimensions must be positive");
+  }
 
-#if defined(KET_PLATFORM_POSIX)
+#if defined(KET_PLATFORM_WINDOWS)
+  return create_conpty_session(spec);
+#elif defined(KET_PLATFORM_POSIX)
   const int master_fd = ::posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
   if (master_fd < 0) {
     throw std::runtime_error(std::string("posix_openpt failed: ") +
@@ -157,7 +164,7 @@ std::unique_ptr<PtySession> create_pty_session(const LaunchSpec& spec) {
   }
 
   if (pid == 0) {
-    ::setsid();
+    if (::setsid() < 0) _exit(126);
     const int slave_fd = ::open(slave_name, O_RDWR);
     if (slave_fd < 0) _exit(126);
     if (::ioctl(slave_fd, TIOCSCTTY, 0) < 0) _exit(126);
@@ -173,6 +180,10 @@ std::unique_ptr<PtySession> create_pty_session(const LaunchSpec& spec) {
       _exit(126);
     }
 
+    for (const auto& [key, value] : spec.environment) {
+      if (::setenv(key.c_str(), value.c_str(), 1) != 0) _exit(126);
+    }
+
     std::vector<std::string> storage;
     auto argv = make_argv(spec, storage);
     ::execvp(spec.executable.c_str(), argv.data());
@@ -182,8 +193,7 @@ std::unique_ptr<PtySession> create_pty_session(const LaunchSpec& spec) {
   return std::make_unique<PosixPtySession>(spec, master_fd, pid);
 #else
   (void)spec;
-  throw std::runtime_error(
-      "ConPTY backend is required on Windows and is not compiled in yet.");
+  throw std::runtime_error("No PTY backend compiled for this platform.");
 #endif
 }
 

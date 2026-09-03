@@ -25,6 +25,7 @@ dependencies:
   highlight: ^0.7.0
   shared_preferences: ^2.5.4
   flutter_math_fork: ^0.7.4
+  xterm3: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -52,3 +53,4 @@ flutter:
   uses-material-design: false
   assets:
     - assets/quantum.jpg
+    - runtime/python/ket_kernel.py
