@@ -6,25 +6,17 @@ import 'package:path/path.dart' as p;
 import '../core/debug/debug_adapter.dart';
 import '../core/experiments/experiment_record.dart';
 import '../core/language/language_services.dart';
+import '../core/quantum/circuit_diagram.dart';
+import '../core/quantum/ket_ir.dart';
 import '../core/quantum/quantum_backend.dart';
 import '../core/quantum/quantum_debugger.dart';
+import '../core/quantum/transpiler_pipeline.dart';
+import '../core/workspace/workspace_graph.dart';
+import 'quantum/provider_registry.dart';
 
-// Kept under application rather than presentation so workbench state remains
-// testable without widget tests.
-enum WorkbenchSection {
-  explorer,
-  search,
-  quantum,
-  experiments,
-  extensions,
-}
+enum WorkbenchSection { explorer, search, quantum, experiments, extensions }
 
-enum WorkbenchBottomPanel {
-  terminal,
-  problems,
-  output,
-  debugConsole,
-}
+enum WorkbenchBottomPanel { terminal, problems, output, debugConsole }
 
 final class WorkbenchDocument {
   WorkbenchDocument({
@@ -109,6 +101,11 @@ print("Bell amplitudes:", amplitude, amplitude)
   QuantumResult? _quantumResult;
   QuantumDebugSnapshot? _quantumDebugSnapshot;
   ExperimentRecord? _lastExperiment;
+  KetCircuit? _quantumCircuit;
+  CircuitDiagram? _circuitDiagram;
+  TranspilationTrace? _transpilationTrace;
+  WorkspaceGraph? _workspaceGraph;
+  List<ProviderSnapshot> _providers = const <ProviderSnapshot>[];
   bool _running = false;
   String? _statusMessage;
 
@@ -125,6 +122,11 @@ print("Bell amplitudes:", amplitude, amplitude)
   QuantumResult? get quantumResult => _quantumResult;
   QuantumDebugSnapshot? get quantumDebugSnapshot => _quantumDebugSnapshot;
   ExperimentRecord? get lastExperiment => _lastExperiment;
+  KetCircuit? get quantumCircuit => _quantumCircuit;
+  CircuitDiagram? get circuitDiagram => _circuitDiagram;
+  TranspilationTrace? get transpilationTrace => _transpilationTrace;
+  WorkspaceGraph? get workspaceGraph => _workspaceGraph;
+  List<ProviderSnapshot> get providers => _providers;
   bool get running => _running;
   String? get statusMessage => _statusMessage;
 
@@ -173,10 +175,9 @@ print("Bell amplitudes:", amplitude, amplitude)
     }
     final file = File(absolute);
     final text = await file.readAsString();
-    final title = p.basename(absolute);
     final document = WorkbenchDocument(
       id: 'file:${file.absolute.uri}',
-      title: title,
+      title: p.basename(absolute),
       languageId: _languageForPath(absolute),
       text: text,
       path: absolute,
@@ -191,9 +192,7 @@ print("Bell amplitudes:", amplitude, amplitude)
   Future<void> saveActive({String? path}) async {
     final document = activeDocument;
     final target = path ?? document.path;
-    if (target == null) {
-      throw StateError('A path is required to save ${document.title}.');
-    }
+    if (target == null) throw StateError('A path is required to save ${document.title}.');
     final file = File(target).absolute;
     await file.parent.create(recursive: true);
     final temporary = File('${file.path}.ket-tmp');
@@ -207,16 +206,17 @@ print("Bell amplitudes:", amplitude, amplitude)
 
   Future<String> materializePythonScratch() async {
     final document = activeDocument;
-    if (document.languageId != 'python') {
-      throw StateError('Active document is not Python.');
-    }
+    if (document.languageId != 'python') throw StateError('Active document is not Python.');
     if (document.path != null) {
       if (document.isDirty) await saveActive();
       return document.path!;
     }
     final directory = Directory(p.join(Directory.current.path, '.ket', 'scratch'));
     await directory.create(recursive: true);
-    final path = p.join(directory.path, '${document.id.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_')}.py');
+    final path = p.join(
+      directory.path,
+      '${document.id.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_')}.py',
+    );
     final file = File(path);
     await file.writeAsString(document.text, flush: true);
     return file.path;
@@ -249,15 +249,44 @@ print("Bell amplitudes:", amplitude, amplitude)
     notifyListeners();
   }
 
+  void setProviders(List<ProviderSnapshot> value) {
+    _providers = List<ProviderSnapshot>.unmodifiable(value);
+    notifyListeners();
+  }
+
   void setQuantumExecution({
     required QuantumResult result,
     required QuantumDebugSnapshot debugSnapshot,
     required ExperimentRecord experiment,
+    required KetCircuit circuit,
+    required CircuitDiagram diagram,
+    required TranspilationTrace transpilation,
+    required WorkspaceGraph workspaceGraph,
   }) {
     _quantumResult = result;
     _quantumDebugSnapshot = debugSnapshot;
     _lastExperiment = experiment;
+    _quantumCircuit = circuit;
+    _circuitDiagram = diagram;
+    _transpilationTrace = transpilation;
+    _workspaceGraph = workspaceGraph;
     _section = WorkbenchSection.quantum;
+    notifyListeners();
+  }
+
+  void setCircuitPreview({
+    required String source,
+    required KetCircuit circuit,
+    required CircuitDiagram diagram,
+  }) {
+    activeDocument.update(source);
+    _quantumCircuit = circuit;
+    _circuitDiagram = diagram;
+    _transpilationTrace = null;
+    _workspaceGraph = null;
+    _quantumResult = null;
+    _quantumDebugSnapshot = null;
+    _statusMessage = 'Circuit edited. Run again to refresh compiler/results.';
     notifyListeners();
   }
 

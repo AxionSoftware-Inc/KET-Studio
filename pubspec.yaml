@@ -1,7 +1,7 @@
 name: ket_studio
 description: "KET Studio — production-grade quantum engineering workbench."
 publish_to: 'none'
-version: 0.3.0-dev.1+2
+version: 0.3.0-dev.2+3
 
 environment:
   sdk: ^3.10.1
@@ -39,7 +39,7 @@ dev_dependencies:
 msix_config:
   display_name: KET Studio
   publisher_display_name: AxionSoftware
-  msix_version: 0.3.0.1
+  msix_version: 0.3.0.2
   logo_path: assets/quantum.jpg
 
 flutter_launcher_icons:

@@ -7,20 +7,26 @@ import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
 import '../../application/editor/editor_intelligence_coordinator.dart';
+import '../../application/quantum/circuit_document_sync.dart';
+import '../../application/quantum/provider_registry.dart';
 import '../../application/quantum/quantum_execution_service.dart';
 import '../../application/runtime/runtime_supervisor.dart';
 import '../../application/workbench_controller.dart';
+import '../../application/workspace/workspace_graph_builder.dart';
 import '../../core/debug/debug_adapter.dart';
 import '../../core/kernel/kernel.dart';
-import '../../core/language/language_services.dart';
 import '../../core/protocol/ket_event.dart';
-import '../../core/quantum/quantum_debugger.dart';
+import '../../core/quantum/circuit_diagram.dart';
 import '../../infrastructure/debug/dap_stdio_debug_adapter.dart';
 import '../../infrastructure/experiments/file_experiment_store.dart';
 import '../../infrastructure/language/pyright_language_service.dart';
+import '../../infrastructure/quantum/basic_transpiler_inspector.dart';
+import '../../infrastructure/quantum/circuit_layout_engine.dart';
+import '../../infrastructure/quantum/local_density_matrix_backend.dart';
 import '../../infrastructure/quantum/local_statevector_backend.dart';
 import '../../infrastructure/quantum/openqasm3_codec.dart';
 import '../editor/code_editor_surface.dart';
+import '../quantum/quantum_workspace_surface.dart';
 import '../terminal/terminal_panel.dart';
 
 final class KetWorkbench extends StatefulWidget {
@@ -34,11 +40,19 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
   late final WorkbenchController _controller;
   late final RuntimeSupervisor _runtime;
   late final EditorIntelligenceCoordinator _intelligence;
+  late final LocalStatevectorBackend _statevector;
+  late final LocalDensityMatrixBackend _densityMatrix;
+  late final QuantumProviderRegistry _providers;
+  late final CircuitDocumentSynchronizer _circuitSync;
+  late final BasicTranspilerInspector _transpiler;
+  late final WorkspaceGraphBuilder _graphBuilder;
   late final QuantumExecutionService _quantum;
+
   DebugSession? _debugSession;
   StreamSubscription<String>? _debugOutputSub;
   StreamSubscription<DebugStackFrame>? _debugFrameSub;
   StreamSubscription<KetEvent>? _kernelEventSub;
+  StreamSubscription<List<ProviderSnapshot>>? _providerSub;
   String? _kernelExecutionId;
 
   @override
@@ -49,15 +63,32 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
     _intelligence = EditorIntelligenceCoordinator(
       host: const PyrightLanguageServiceHost(),
     );
+
+    const codec = OpenQasm3CodecImpl();
+    const layout = DeterministicCircuitLayoutEngine();
+    _statevector = LocalStatevectorBackend(openQasm3Codec: codec);
+    _densityMatrix = LocalDensityMatrixBackend(openQasm3Codec: codec);
+    _providers = QuantumProviderRegistry()
+      ..register(_statevector)
+      ..register(_densityMatrix);
+    _providerSub = _providers.changes.listen(_controller.setProviders);
+    _circuitSync = const CircuitDocumentSynchronizer(
+      codec: codec,
+      layoutEngine: layout,
+    );
+    _transpiler = const BasicTranspilerInspector();
+    _graphBuilder = const WorkspaceGraphBuilder();
     _quantum = QuantumExecutionService(
-      openQasm3Codec: const OpenQasm3CodecImpl(),
-      backend: LocalStatevectorBackend(),
+      openQasm3Codec: codec,
+      backend: _statevector,
       debugger: const LocalQuantumDebugger(),
       experimentStore: FileExperimentStore(
         Directory(p.join(Directory.current.path, '.ket', 'experiments')),
       ),
     );
+
     unawaited(_runtime.initialize());
+    unawaited(_providers.refreshAll().then(_controller.setProviders));
   }
 
   Future<void> _activateIntelligence() async {
@@ -113,38 +144,75 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
     if (_controller.running) return;
     if (document.languageId == 'openqasm3') {
       await _runQuantum();
-      return;
-    }
-    if (document.languageId == 'python') {
+    } else if (document.languageId == 'python') {
       await _runPython();
-      return;
+    } else {
+      _controller.setStatus('No runner is registered for ${document.languageId}.');
     }
-    _controller.setStatus('No runner is registered for ${document.languageId}.');
   }
 
   Future<void> _runQuantum() async {
     _controller.setRunning(true, status: 'Running exact local quantum simulation…');
     _controller.showBottomPanel(WorkbenchBottomPanel.output);
     try {
+      final source = _controller.activeDocument.text;
+      final sync = _circuitSync.parse(source);
       final report = await _quantum.runOpenQasm(
-        source: _controller.activeDocument.text,
+        source: source,
         projectId: Directory.current.absolute.path,
         shots: 1024,
         seed: 7,
+      );
+      final transpilation = await _transpiler.transpile(
+        circuit: sync.circuit,
+        backendId: report.job.backendId,
+        targetId: report.job.targetId,
+      );
+      final graph = _graphBuilder.build(
+        sourceLabel: _controller.activeDocument.title,
+        circuit: sync.circuit,
+        backendId: report.job.backendId,
+        targetId: report.job.targetId,
+        result: report.result,
+        experiment: report.record,
+        transpilation: transpilation,
       );
       _controller.setQuantumExecution(
         result: report.result,
         debugSnapshot: report.debugSnapshot,
         experiment: report.record,
+        circuit: sync.circuit,
+        diagram: sync.diagram,
+        transpilation: transpilation,
+        workspaceGraph: graph,
       );
       _controller.appendOutput(
-        '[quantum] ${report.job.backendId}/${report.job.targetId} '
-        'completed: ${report.result.counts}',
+        '[quantum] ${report.job.backendId}/${report.job.targetId} completed: '
+        '${report.result.counts} • compiler ${transpilation.input.operations.length}→'
+        '${transpilation.output.operations.length} ops',
       );
-      _controller.setRunning(false, status: 'Quantum execution complete.');
+      _controller.setRunning(false, status: 'Quantum execution + compiler trace complete.');
     } catch (error) {
       _controller.appendOutput('[quantum error] $error');
       _controller.setRunning(false, status: 'Quantum execution failed.');
+    }
+  }
+
+  void _applyCircuitEdit(CircuitEdit edit) {
+    final document = _controller.activeDocument;
+    if (document.languageId != 'openqasm3') {
+      _controller.setStatus('Visual circuit edits require an OpenQASM document.');
+      return;
+    }
+    try {
+      final updated = _circuitSync.apply(document.text, edit);
+      _controller.setCircuitPreview(
+        source: updated.source,
+        circuit: updated.circuit,
+        diagram: updated.diagram,
+      );
+    } catch (error) {
+      _controller.setStatus('Circuit edit rejected: $error');
     }
   }
 
@@ -288,6 +356,7 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
                             _controller.updateActiveText(value);
                             _intelligence.scheduleChange(_controller.activeDocument);
                           },
+                          onCircuitEdit: _applyCircuitEdit,
                         ),
                       ),
                       if (_controller.inspectorVisible) ...<Widget>[
@@ -318,9 +387,11 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
   @override
   void dispose() {
     unawaited(_kernelEventSub?.cancel() ?? Future<void>.value());
+    unawaited(_providerSub?.cancel() ?? Future<void>.value());
     unawaited(_disposeDebugSession());
     unawaited(_intelligence.dispose());
     unawaited(_quantum.dispose());
+    unawaited(_providers.dispose());
     unawaited(_runtime.dispose());
     _controller.dispose();
     super.dispose();
@@ -431,7 +502,11 @@ final class _ActivityButton extends StatelessWidget {
           children: <Widget>[
             Center(
               child: IconButton(
-                icon: Icon(icon, size: 21, color: selected ? const Color(0xFFE6EEF8) : const Color(0xFF7F8A96)),
+                icon: Icon(
+                  icon,
+                  size: 21,
+                  color: selected ? const Color(0xFFE6EEF8) : const Color(0xFF7F8A96),
+                ),
                 onPressed: onPressed,
               ),
             ),
@@ -461,7 +536,9 @@ final class _Sidebar extends StatelessWidget {
               onTap: () => controller.activateDocument(document.id),
               child: Container(
                 height: 30,
-                color: document.id == controller.activeDocument.id ? const Color(0xFF18212B) : Colors.transparent,
+                color: document.id == controller.activeDocument.id
+                    ? const Color(0xFF18212B)
+                    : Colors.transparent,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -475,14 +552,21 @@ final class _Sidebar extends StatelessWidget {
       );
     }
     final content = switch (controller.section) {
-      WorkbenchSection.search => 'Indexed project search joins LSP symbols in the next compiler milestone.',
-      WorkbenchSection.quantum => controller.quantumResult == null
-          ? 'Run an OpenQASM 3 document to create a local exact simulation and debugger session.'
-          : 'Last counts: ${controller.quantumResult!.counts}',
+      WorkbenchSection.search => 'Project search is ready to bind LSP workspace symbols.',
+      WorkbenchSection.quantum => controller.quantumCircuit == null
+          ? 'Run an OpenQASM 3 document to build circuit, compiler and debugger state.'
+          : '${controller.quantumCircuit!.qubitCount} qubits • '
+            '${controller.circuitDiagram?.depth ?? 0} depth • '
+            '${controller.transpilationTrace?.stages.length ?? 0} compiler passes',
       WorkbenchSection.experiments => controller.lastExperiment == null
           ? 'No reproducible experiment has been persisted yet.'
-          : '${controller.lastExperiment!.id}\n${controller.lastExperiment!.createdAt.toLocal()}',
-      WorkbenchSection.extensions => 'Provider, simulator and analysis plugins use the versioned KET plugin boundary.',
+          : '${controller.lastExperiment!.id}\n'
+            '${controller.workspaceGraph?.nodes.length ?? 0} graph nodes',
+      WorkbenchSection.extensions => controller.providers.isEmpty
+          ? 'No providers registered.'
+          : controller.providers
+              .map((provider) => '${provider.displayName}: ${provider.health.name}')
+              .join('\n'),
       WorkbenchSection.explorer => '',
     };
     return Column(
@@ -491,7 +575,10 @@ final class _Sidebar extends StatelessWidget {
         _SidebarHeader(controller.section.name.toUpperCase()),
         Padding(
           padding: const EdgeInsets.all(14),
-          child: Text(content, style: const TextStyle(fontSize: 12, height: 1.45, color: Color(0xFF8995A3))),
+          child: Text(
+            content,
+            style: const TextStyle(fontSize: 12, height: 1.45, color: Color(0xFF8995A3)),
+          ),
         ),
       ],
     );
@@ -501,6 +588,7 @@ final class _Sidebar extends StatelessWidget {
 final class _SidebarHeader extends StatelessWidget {
   const _SidebarHeader(this.title);
   final String title;
+
   @override
   Widget build(BuildContext context) => SizedBox(
         height: 38,
@@ -508,17 +596,31 @@ final class _SidebarHeader extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFFAAB5C2), fontWeight: FontWeight.w600)),
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFFAAB5C2),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       );
 }
 
 final class _CenterWorkspace extends StatelessWidget {
-  const _CenterWorkspace({required this.controller, required this.runtime, required this.onChanged});
+  const _CenterWorkspace({
+    required this.controller,
+    required this.runtime,
+    required this.onChanged,
+    required this.onCircuitEdit,
+  });
+
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
   final ValueChanged<String> onChanged;
+  final ValueChanged<CircuitEdit> onCircuitEdit;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -529,26 +631,51 @@ final class _CenterWorkspace extends StatelessWidget {
               children: <Widget>[
                 for (final document in controller.documents)
                   GestureDetector(
-                    onTap: () => controller.activateDocument(document.id),
+                    onTap: () {
+                      controller.activateDocument(document.id);
+                      controller.selectSection(WorkbenchSection.explorer);
+                    },
                     child: Container(
                       constraints: const BoxConstraints(minWidth: 120, maxWidth: 190),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       alignment: Alignment.centerLeft,
                       decoration: BoxDecoration(
-                        color: document.id == controller.activeDocument.id ? const Color(0xFF10161E) : const Color(0xFF0C1117),
+                        color: document.id == controller.activeDocument.id
+                            ? const Color(0xFF10161E)
+                            : const Color(0xFF0C1117),
                         border: Border(
                           top: BorderSide(
-                            color: document.id == controller.activeDocument.id ? const Color(0xFF4EA1FF) : Colors.transparent,
+                            color: document.id == controller.activeDocument.id
+                                ? const Color(0xFF4EA1FF)
+                                : Colors.transparent,
                             width: 2,
                           ),
                         ),
                       ),
-                      child: Text('${document.title}${document.isDirty ? ' •' : ''}', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                      child: Text(
+                        '${document.title}${document.isDirty ? ' •' : ''}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11),
+                      ),
                     ),
                   ),
                 const Spacer(),
+                if (controller.quantumCircuit != null)
+                  Button(
+                    onPressed: () => controller.selectSection(
+                      controller.section == WorkbenchSection.quantum
+                          ? WorkbenchSection.explorer
+                          : WorkbenchSection.quantum,
+                    ),
+                    child: Text(
+                      controller.section == WorkbenchSection.quantum ? 'Code' : 'Circuit',
+                    ),
+                  ),
                 IconButton(
-                  icon: Icon(controller.bottomVisible ? FluentIcons.chevron_down : FluentIcons.chevron_up, size: 12),
+                  icon: Icon(
+                    controller.bottomVisible ? FluentIcons.chevron_down : FluentIcons.chevron_up,
+                    size: 12,
+                  ),
                   onPressed: controller.toggleBottomPanel,
                 ),
               ],
@@ -556,15 +683,24 @@ final class _CenterWorkspace extends StatelessWidget {
           ),
           const Divider(size: 1),
           Expanded(
-            child: CodeEditorSurface(
-              key: ValueKey<String>(controller.activeDocument.id),
-              document: controller.activeDocument,
-              onChanged: onChanged,
-            ),
+            child: controller.section == WorkbenchSection.quantum &&
+                    controller.circuitDiagram != null
+                ? QuantumWorkspaceSurface(
+                    controller: controller,
+                    onEdit: onCircuitEdit,
+                  )
+                : CodeEditorSurface(
+                    key: ValueKey<String>(controller.activeDocument.id),
+                    document: controller.activeDocument,
+                    onChanged: onChanged,
+                  ),
           ),
           if (controller.bottomVisible) ...<Widget>[
             const Divider(size: 1),
-            SizedBox(height: 270, child: _BottomPanel(controller: controller, runtime: runtime)),
+            SizedBox(
+              height: 270,
+              child: _BottomPanel(controller: controller, runtime: runtime),
+            ),
           ],
         ],
       );
@@ -595,7 +731,10 @@ final class _BottomPanel extends StatelessWidget {
                     onPressed: () => controller.showBottomPanel(panel),
                   ),
                 const Spacer(),
-                IconButton(icon: const Icon(FluentIcons.chrome_close, size: 11), onPressed: controller.toggleBottomPanel),
+                IconButton(
+                  icon: const Icon(FluentIcons.chrome_close, size: 11),
+                  onPressed: controller.toggleBottomPanel,
+                ),
               ],
             ),
           ),
@@ -625,20 +764,32 @@ final class _BottomPanel extends StatelessWidget {
             padding: const EdgeInsets.all(10),
             children: <Widget>[
               for (final line in controller.output)
-                SelectableText(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.35)),
+                SelectableText(
+                  line,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.35),
+                ),
             ],
           ),
         WorkbenchBottomPanel.debugConsole => ListView(
             padding: const EdgeInsets.all(10),
             children: <Widget>[
               if (controller.debugFrames.isEmpty)
-                const Text('No active Python stop frame.', style: TextStyle(fontSize: 11, color: Color(0xFF7F8A96)))
+                const Text(
+                  'No active Python stop frame.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF7F8A96)),
+                )
               else
                 for (final frame in controller.debugFrames)
-                  Text('${frame.name} — ${frame.sourcePath ?? ''}:${frame.line}', style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                  Text(
+                    '${frame.name} — ${frame.sourcePath ?? ''}:${frame.line}',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                  ),
               const SizedBox(height: 10),
               for (final line in controller.output.reversed.take(40).toList().reversed)
-                SelectableText(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                SelectableText(
+                  line,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
             ],
           ),
       };
@@ -649,6 +800,7 @@ final class _PanelTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onPressed;
+
   @override
   Widget build(BuildContext context) => GestureDetector(
         onTap: onPressed,
@@ -657,9 +809,20 @@ final class _PanelTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 9),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: selected ? const Color(0xFF4EA1FF) : Colors.transparent, width: 2)),
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? const Color(0xFF4EA1FF) : Colors.transparent,
+                width: 2,
+              ),
+            ),
           ),
-          child: Text(label, style: TextStyle(fontSize: 10, color: selected ? const Color(0xFFE2EAF3) : const Color(0xFF7F8A96))),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected ? const Color(0xFFE2EAF3) : const Color(0xFF7F8A96),
+            ),
+          ),
         ),
       );
 }
@@ -671,6 +834,7 @@ final class _Inspector extends StatelessWidget {
     required this.onStepBack,
     required this.onStepForward,
   });
+
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
   final VoidCallback onStepBack;
@@ -680,20 +844,42 @@ final class _Inspector extends StatelessWidget {
   Widget build(BuildContext context) {
     final result = controller.quantumResult;
     final debug = controller.quantumDebugSnapshot;
+    final readyProviders = controller.providers
+        .where((provider) => provider.health == ProviderHealth.ready)
+        .length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const _SidebarHeader('QUANTUM INSPECTOR'),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(12),
             children: <Widget>[
-              const _InspectorCard(title: 'Backend', value: 'KET Local Statevector', detail: 'Exact • isolate worker • max 16 qubits'),
+              _InspectorCard(
+                title: 'Providers',
+                value: '$readyProviders/${controller.providers.length} ready',
+                detail: controller.providers.isEmpty
+                    ? 'Registry initializing'
+                    : controller.providers.map((item) => item.displayName).join(' • '),
+              ),
+              const SizedBox(height: 8),
+              _InspectorCard(
+                title: 'Circuit / Compiler',
+                value: controller.quantumCircuit == null
+                    ? 'Not compiled'
+                    : '${controller.quantumCircuit!.qubitCount} qubits • depth ${controller.circuitDiagram?.depth ?? 0}',
+                detail: controller.transpilationTrace == null
+                    ? 'Run to create compiler trace'
+                    : '${controller.transpilationTrace!.stages.length} passes • '
+                      '${controller.transpilationTrace!.input.operations.length}→'
+                      '${controller.transpilationTrace!.output.operations.length} ops',
+              ),
               const SizedBox(height: 8),
               _InspectorCard(
                 title: 'Result',
-                value: result == null ? 'Not executed' : '${result.counts.values.fold<int>(0, (a, b) => a + b)} shots',
+                value: result == null
+                    ? 'Not executed'
+                    : '${result.counts.values.fold<int>(0, (a, b) => a + b)} shots',
                 detail: result == null ? 'Run an OpenQASM document' : '${result.counts}',
               ),
               const SizedBox(height: 8),
@@ -702,7 +888,8 @@ final class _Inspector extends StatelessWidget {
                 value: debug == null ? 'No session' : 'Operation ${debug.operationIndex}',
                 detail: debug == null
                     ? 'State snapshots appear after execution'
-                    : 'P=${debug.probabilities} • entanglement=${debug.entanglement.isEmpty ? 0 : debug.entanglement.first.strength.toStringAsFixed(3)}',
+                    : 'P=${debug.probabilities} • entanglement='
+                      '${debug.entanglement.isEmpty ? 0 : debug.entanglement.first.strength.toStringAsFixed(3)}',
               ),
               if (debug != null) ...<Widget>[
                 const SizedBox(height: 8),
@@ -718,7 +905,11 @@ final class _Inspector extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      'q${qubit.index}: Bloch (${qubit.blochX.toStringAsFixed(3)}, ${qubit.blochY.toStringAsFixed(3)}, ${qubit.blochZ.toStringAsFixed(3)}) • purity ${qubit.purity.toStringAsFixed(3)}',
+                      'q${qubit.index}: Bloch '
+                      '(${qubit.blochX.toStringAsFixed(3)}, '
+                      '${qubit.blochY.toStringAsFixed(3)}, '
+                      '${qubit.blochZ.toStringAsFixed(3)}) • '
+                      'purity ${qubit.purity.toStringAsFixed(3)}',
                       style: const TextStyle(fontSize: 10, color: Color(0xFF8D99A7)),
                     ),
                   ),
@@ -745,6 +936,7 @@ final class _InspectorCard extends StatelessWidget {
   final String title;
   final String value;
   final String detail;
+
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(11),
@@ -788,7 +980,11 @@ final class _StatusBar extends StatelessWidget {
             return Row(
               children: <Widget>[
                 const SizedBox(width: 10),
-                Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
                 const SizedBox(width: 6),
                 Text(value.health.name, style: const TextStyle(fontSize: 10)),
                 const SizedBox(width: 16),
@@ -799,9 +995,20 @@ final class _StatusBar extends StatelessWidget {
                     style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
                   ),
                 ),
-                Text(controller.activeDocument.languageId, style: const TextStyle(fontSize: 10, color: Color(0xFF83909D))),
+                Text(
+                  controller.activeDocument.languageId,
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
+                ),
                 const SizedBox(width: 10),
-                Text('${value.terminalCount} terminal', style: const TextStyle(fontSize: 10, color: Color(0xFF83909D))),
+                Text(
+                  '${controller.providers.where((p) => p.health == ProviderHealth.ready).length} providers',
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${value.terminalCount} terminal',
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
+                ),
                 const SizedBox(width: 12),
               ],
             );
