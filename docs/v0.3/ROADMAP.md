@@ -1,90 +1,94 @@
 # KET Studio v0.3 — Production Roadmap
 
-This roadmap is intentionally ordered by architectural risk, not visual appeal.
+This roadmap is ordered by architectural risk rather than visual appeal.
 
-## Phase 0 — Foundation (current)
+## Phase 0 — Foundation — LANDED
 
 - clean v0.3 module boundary
 - versioned KET Protocol
 - deterministic lifecycle/state machines
-- terminal and execution contracts
-- test/analysis quality gate
+- terminal/execution/kernel/provider contracts
 - architecture and security rules
 
-Exit criteria: core code is testable headlessly and no v0.3 domain module imports Flutter.
+## Phase 1 — Native host — FOUNDATION LANDED
 
-## Phase 1 — Native host
-
-- native host process/library
-- Windows ConPTY adapter
-- Linux/macOS POSIX PTY adapter
-- process-tree ownership and termination
-- shell discovery
+- isolated native host
+- Windows ConPTY
+- Linux/macOS POSIX PTY
+- process-tree ownership
 - environment normalization
-- framed IPC with backpressure
-- crash isolation and restart policy
+- framed IPC
+- terminal emulator binding
 
-Exit criteria: interactive shells pass resize, Unicode, interrupt, exit-code and process-tree integration tests on supported OSes.
+Remaining release gate: platform stress/integration validation on packaged Windows/macOS/Linux builds.
 
-## Phase 2 — Workbench shell
+## Phase 2 — Workbench shell — FUNCTIONAL SLICE LANDED
 
-- clean application bootstrap
-- command registry
-- workspace/project model
-- dockable/resizable panes
-- explorer
-- editor tabs and dirty-state handling
-- real terminal view bound to PTY
-- settings and keybindings
-- crash recovery/autosave
+- v0.3 application bootstrap
+- activity/sidebar/editor/bottom-panel workbench
+- real VT terminal
+- multi-document editing and dirty state
+- filesystem open/save
+- Command Palette + default keybindings
+- isolate-backed project search
+- persisted workspace/session recovery
+- selected provider/noise state recovery
 
-Exit criteria: KET Studio can be used as a stable project workbench without quantum-specific features.
+Remaining: external file-watch merge UX, settings/keybinding customization and accessibility polish.
 
-## Phase 3 — Python engineering environment
+## Phase 3 — Python engineering environment — FUNCTIONAL SLICE LANDED
 
-- interpreter discovery
-- uv/venv environment management
 - persistent Python kernel
-- structured stdout/stderr/display transport
-- stdin requests
-- cancellation and restart
-- Python LSP integration
-- diagnostics/completion/navigation
-- debugger adapter integration
+- structured KET events
+- stdin/restart lifecycle
+- Pyright LSP transport
+- diagnostics/completion/hover/definition contract
+- debugpy-compatible DAP transport
+- Python Run/Debug workbench integration
 
-Exit criteria: Python workflow is competitive with a focused engineering IDE for KET Studio use cases.
+Remaining: environment/venv manager, deeper DAP UI and release-platform integration tests.
 
-## Phase 4 — Quantum workbench
+## Phase 4 — Quantum workbench — CORE PRODUCT LOOP LANDED
 
-- normalized circuit model
-- circuit renderer/editor
-- histogram/statevector/density-matrix views
-- Bloch sphere and state inspection
-- simulation jobs
-- Qiskit adapter
-- Cirq adapter
-- PennyLane adapter
-- experiment parameters/history/artifacts
+- KET IR + validated OpenQASM 3 subset
+- exact isolate-backed statevector simulation
+- density-matrix/noise foundation
+- visual circuit canvas with source round-trip edits
+- quantum debugger with Bloch/purity/concurrence
+- transpiler pass trace and metrics
+- provider registry/health
+- optional Qiskit/PennyLane/Cirq Python bridge adapters
+- persisted experiments/artifacts
+- Experiment Lab distribution comparison
+- Workspace Graph lineage
+- remote-job recovery substrate
 
-Exit criteria: circuit -> execute -> inspect -> compare experiments works end-to-end.
+Remaining: authenticated real-hardware/cloud adapters, richer circuit editing, full noise channels and large-workflow UX.
 
-## Phase 5 — Production hardening
+## Phase 5 — Production hardening — NEXT LARGE MILESTONE
 
-- large-project performance profiling
-- protocol fuzzing
-- resource leak testing
-- packaging/signing
-- updater
-- structured logs and diagnostics bundle
+- packaged runtime/native-host/provider-bridge discovery
+- installer validation on Windows/macOS/Linux
+- structured logging and crash/support bundle
+- credential/security storage boundary
+- plugin signing/trust policy
+- protocol fuzzing and malformed-host tests
+- terminal/kernel/provider stress suites
+- resource/leak profiling
 - accessibility and keyboard navigation audit
-- integration/smoke suites on Windows/macOS/Linux
-- release-channel policy
+- external file watching/conflict handling
+- release candidate checklist and release-channel policy
 
-Exit criteria: release candidate meets documented reliability and supportability gates.
+Exit criteria: a packaged release candidate meets documented reliability, security, recovery and supportability gates on every supported desktop OS.
 
-## Non-goals for early v0.3
+## Delivery rule
+
+Development proceeds through large vertical milestones and atomic commits. GitHub Actions remains disabled by repository-owner request; release gates are executed locally/release-side.
+
+## Non-goals for v0.3
 
 - cloning VS Code extension compatibility
 - supporting every programming language
-- cloud account system before local workflows are excellent
-- adding AI features before execution/editor/terminal foundations are reliable
+- cloud account/collaboration before local workflows are excellent
+- making AI a dependency of the core product
+- pretending unsupported hardware/noise/provider semantics are implemented

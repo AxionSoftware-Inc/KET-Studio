@@ -8,15 +8,18 @@ final class RuntimePaths {
     required this.kernelScript,
     required this.pythonInterpreter,
     required this.defaultShell,
+    this.providerBridgeScript,
   });
 
   final String? nativeHost;
   final String? kernelScript;
+  final String? providerBridgeScript;
   final String pythonInterpreter;
   final String defaultShell;
 
   bool get hasNativeHost => nativeHost != null;
   bool get hasKernel => kernelScript != null;
+  bool get hasProviderBridge => providerBridgeScript != null;
 }
 
 final class RuntimeLocator {
@@ -49,9 +52,23 @@ final class RuntimeLocator {
       ),
     ]);
 
+    final providerBridgeScript = _firstExisting(<String?>[
+      Platform.environment['KET_PROVIDER_BRIDGE'],
+      p.join(projectDir, 'runtime', 'python', 'ket_provider_bridge.py'),
+      p.join(
+        executableDir,
+        'data',
+        'flutter_assets',
+        'runtime',
+        'python',
+        'ket_provider_bridge.py',
+      ),
+    ]);
+
     return RuntimePaths(
       nativeHost: nativeHost,
       kernelScript: kernelScript,
+      providerBridgeScript: providerBridgeScript,
       pythonInterpreter: Platform.environment['KET_PYTHON'] ??
           (Platform.isWindows ? 'python.exe' : 'python3'),
       defaultShell: _defaultShell(),

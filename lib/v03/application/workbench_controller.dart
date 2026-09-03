@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/debug/debug_adapter.dart';
+import '../core/experiments/experiment_lab.dart';
 import '../core/experiments/experiment_record.dart';
 import '../core/language/language_services.dart';
 import '../core/quantum/circuit_diagram.dart';
@@ -12,7 +13,9 @@ import '../core/quantum/quantum_backend.dart';
 import '../core/quantum/quantum_debugger.dart';
 import '../core/quantum/transpiler_pipeline.dart';
 import '../core/workspace/workspace_graph.dart';
+import '../core/workspace/workspace_session.dart';
 import 'quantum/provider_registry.dart';
+import 'search/project_search_service.dart';
 
 enum WorkbenchSection { explorer, search, quantum, experiments, extensions }
 
@@ -24,9 +27,10 @@ final class WorkbenchDocument {
     required this.title,
     required this.languageId,
     required String text,
+    String? savedText,
     this.path,
   })  : _text = text,
-        _savedText = text;
+        _savedText = savedText ?? text;
 
   final String id;
   String title;
@@ -37,6 +41,7 @@ final class WorkbenchDocument {
   int version = 1;
 
   String get text => _text;
+  String get savedText => _savedText;
   bool get isDirty => _text != _savedText;
   Uri? get uri => path == null ? null : File(path!).absolute.uri;
 
@@ -101,11 +106,18 @@ print("Bell amplitudes:", amplitude, amplitude)
   QuantumResult? _quantumResult;
   QuantumDebugSnapshot? _quantumDebugSnapshot;
   ExperimentRecord? _lastExperiment;
+  List<ExperimentRecord> _experimentHistory = const <ExperimentRecord>[];
+  ExperimentComparison? _experimentComparison;
   KetCircuit? _quantumCircuit;
   CircuitDiagram? _circuitDiagram;
   TranspilationTrace? _transpilationTrace;
   WorkspaceGraph? _workspaceGraph;
   List<ProviderSnapshot> _providers = const <ProviderSnapshot>[];
+  List<ProjectSearchMatch> _searchResults = const <ProjectSearchMatch>[];
+  String _searchQuery = '';
+  String _selectedBackendId = 'ket.local.statevector';
+  String _selectedTargetId = 'local-statevector';
+  String _noisePresetId = 'ideal';
   bool _running = false;
   String? _statusMessage;
 
@@ -122,11 +134,18 @@ print("Bell amplitudes:", amplitude, amplitude)
   QuantumResult? get quantumResult => _quantumResult;
   QuantumDebugSnapshot? get quantumDebugSnapshot => _quantumDebugSnapshot;
   ExperimentRecord? get lastExperiment => _lastExperiment;
+  List<ExperimentRecord> get experimentHistory => _experimentHistory;
+  ExperimentComparison? get experimentComparison => _experimentComparison;
   KetCircuit? get quantumCircuit => _quantumCircuit;
   CircuitDiagram? get circuitDiagram => _circuitDiagram;
   TranspilationTrace? get transpilationTrace => _transpilationTrace;
   WorkspaceGraph? get workspaceGraph => _workspaceGraph;
   List<ProviderSnapshot> get providers => _providers;
+  List<ProjectSearchMatch> get searchResults => _searchResults;
+  String get searchQuery => _searchQuery;
+  String get selectedBackendId => _selectedBackendId;
+  String get selectedTargetId => _selectedTargetId;
+  String get noisePresetId => _noisePresetId;
   bool get running => _running;
   String? get statusMessage => _statusMessage;
 
@@ -254,6 +273,38 @@ print("Bell amplitudes:", amplitude, amplitude)
     notifyListeners();
   }
 
+  void setExecutionTarget(String backendId, String targetId) {
+    if (_selectedBackendId == backendId && _selectedTargetId == targetId) return;
+    _selectedBackendId = backendId;
+    _selectedTargetId = targetId;
+    _statusMessage = 'Execution target: $backendId/$targetId';
+    notifyListeners();
+  }
+
+  void setExperimentHistory(List<ExperimentRecord> value) {
+    _experimentHistory = List<ExperimentRecord>.unmodifiable(value);
+    notifyListeners();
+  }
+
+  void setExperimentComparison(ExperimentComparison? value) {
+    _experimentComparison = value;
+    notifyListeners();
+  }
+
+  void setSearchResults(String query, List<ProjectSearchMatch> value) {
+    _searchQuery = query;
+    _searchResults = List<ProjectSearchMatch>.unmodifiable(value);
+    _section = WorkbenchSection.search;
+    notifyListeners();
+  }
+
+  void setNoisePreset(String id) {
+    if (_noisePresetId == id) return;
+    _noisePresetId = id;
+    _statusMessage = 'Noise preset: $id';
+    notifyListeners();
+  }
+
   void setQuantumExecution({
     required QuantumResult result,
     required QuantumDebugSnapshot debugSnapshot,
@@ -303,6 +354,62 @@ print("Bell amplitudes:", amplitude, amplitude)
 
   void setStatus(String? value) {
     _statusMessage = value;
+    notifyListeners();
+  }
+
+  WorkspaceSession snapshotSession() {
+    return WorkspaceSession(
+      savedAt: DateTime.now().toUtc(),
+      documents: <WorkspaceDocumentState>[
+        for (final document in _documents)
+          WorkspaceDocumentState(
+            id: document.id,
+            title: document.title,
+            languageId: document.languageId,
+            text: document.text,
+            savedText: document.savedText,
+            path: document.path,
+          ),
+      ],
+      activeDocumentId: _activeDocumentId,
+      section: _section.name,
+      bottomPanel: _bottomPanel.name,
+      bottomVisible: _bottomVisible,
+      inspectorVisible: _inspectorVisible,
+      selectedBackendId: _selectedBackendId,
+      selectedTargetId: _selectedTargetId,
+      noisePresetId: _noisePresetId,
+    );
+  }
+
+  void restoreSession(WorkspaceSession session) {
+    if (session.documents.isEmpty) return;
+    _documents
+      ..clear()
+      ..addAll(session.documents.map((state) => WorkbenchDocument(
+            id: state.id,
+            title: state.title,
+            languageId: state.languageId,
+            text: state.text,
+            savedText: state.savedText,
+            path: state.path,
+          )));
+    _activeDocumentId = _documents.any((item) => item.id == session.activeDocumentId)
+        ? session.activeDocumentId
+        : _documents.first.id;
+    _section = WorkbenchSection.values.where((item) => item.name == session.section).firstOrNull ??
+        WorkbenchSection.explorer;
+    _bottomPanel = WorkbenchBottomPanel.values
+            .where((item) => item.name == session.bottomPanel)
+            .firstOrNull ??
+        WorkbenchBottomPanel.terminal;
+    _bottomVisible = session.bottomVisible;
+    _inspectorVisible = session.inspectorVisible;
+    _selectedBackendId = session.selectedBackendId;
+    _selectedTargetId = session.selectedTargetId;
+    _noisePresetId = session.noisePresetId;
+    _diagnostics = const <LanguageDiagnostic>[];
+    _statusMessage = 'Workspace recovered from ${session.savedAt.toLocal()}.';
     notifyListeners();
   }
 

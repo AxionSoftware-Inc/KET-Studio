@@ -32,12 +32,12 @@ final class QuantumExecutionService {
     required QuantumDebugger debugger,
     required FileExperimentStore experimentStore,
   })  : _openQasm3Codec = openQasm3Codec,
-        _backend = backend,
+        _defaultBackend = backend,
         _debugger = debugger,
         _experimentStore = experimentStore;
 
   final OpenQasm3Codec _openQasm3Codec;
-  final QuantumBackend _backend;
+  final QuantumBackend _defaultBackend;
   final QuantumDebugger _debugger;
   final FileExperimentStore _experimentStore;
 
@@ -50,19 +50,24 @@ final class QuantumExecutionService {
   Future<QuantumExecutionReport> runOpenQasm({
     required String source,
     required String projectId,
+    QuantumBackend? backend,
+    String targetId = 'local-statevector',
     int shots = 1024,
     int? seed,
     Map<String, double> parameters = const <String, double>{},
+    Map<String, Object?> options = const <String, Object?>{},
   }) async {
     final circuit = _openQasm3Codec.decode(source);
     final canonical = _openQasm3Codec.encode(circuit);
-    final job = await _backend.submit(QuantumExecutionRequest(
-      targetId: 'local-statevector',
+    final selectedBackend = backend ?? _defaultBackend;
+    final job = await selectedBackend.submit(QuantumExecutionRequest(
+      targetId: targetId,
       program: canonical,
       format: QuantumProgramFormat.openQasm3,
       shots: shots,
       seed: seed,
       parameters: parameters,
+      options: options,
     ));
     _activeJob = job;
     final snapshot = await job.completion;
@@ -94,11 +99,14 @@ final class QuantumExecutionService {
       shots: shots,
       seed: seed,
       parameters: parameters,
-      dependencies: const <String, String>{
+      dependencies: <String, String>{
         'ket-protocol': '1',
-        'local-simulator': 'statevector-v1',
+        'execution-backend': snapshot.backendId,
       },
-      backendMetadata: snapshot.metadata,
+      backendMetadata: <String, Object?>{
+        ...snapshot.metadata,
+        if (options.isNotEmpty) 'executionOptions': _jsonSafe(options),
+      },
       artifacts: <ExperimentArtifact>[resultArtifact, circuitArtifact],
     );
     await _experimentStore.save(record);
@@ -157,6 +165,15 @@ final class QuantumExecutionService {
             .toList(),
         'metadata': result.metadata,
       };
+
+  Object? _jsonSafe(Object? value) {
+    if (value == null || value is String || value is num || value is bool) return value;
+    if (value is Map) {
+      return value.map((key, item) => MapEntry('$key', _jsonSafe(item)));
+    }
+    if (value is Iterable) return value.map(_jsonSafe).toList(growable: false);
+    return '$value';
+  }
 
   String _environmentFingerprint() {
     final source = <String>[

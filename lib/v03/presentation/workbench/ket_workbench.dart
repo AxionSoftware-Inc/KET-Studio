@@ -3,30 +3,29 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
 import '../../application/editor/editor_intelligence_coordinator.dart';
-import '../../application/quantum/circuit_document_sync.dart';
 import '../../application/quantum/provider_registry.dart';
-import '../../application/quantum/quantum_execution_service.dart';
 import '../../application/runtime/runtime_supervisor.dart';
+import '../../application/search/project_search_service.dart';
+import '../../application/workbench/command_registry.dart';
+import '../../application/workbench/workbench_product_coordinator.dart';
 import '../../application/workbench_controller.dart';
-import '../../application/workspace/workspace_graph_builder.dart';
 import '../../core/debug/debug_adapter.dart';
 import '../../core/kernel/kernel.dart';
 import '../../core/protocol/ket_event.dart';
 import '../../core/quantum/circuit_diagram.dart';
+import '../../core/quantum/noise_model.dart';
 import '../../infrastructure/debug/dap_stdio_debug_adapter.dart';
-import '../../infrastructure/experiments/file_experiment_store.dart';
 import '../../infrastructure/language/pyright_language_service.dart';
-import '../../infrastructure/quantum/basic_transpiler_inspector.dart';
-import '../../infrastructure/quantum/circuit_layout_engine.dart';
-import '../../infrastructure/quantum/local_density_matrix_backend.dart';
-import '../../infrastructure/quantum/local_statevector_backend.dart';
-import '../../infrastructure/quantum/openqasm3_codec.dart';
+import '../command/command_palette_dialog.dart';
 import '../editor/code_editor_surface.dart';
+import '../experiments/experiment_lab_surface.dart';
 import '../quantum/quantum_workspace_surface.dart';
+import '../search/project_search_surface.dart';
 import '../terminal/terminal_panel.dart';
 
 final class KetWorkbench extends StatefulWidget {
@@ -40,19 +39,13 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
   late final WorkbenchController _controller;
   late final RuntimeSupervisor _runtime;
   late final EditorIntelligenceCoordinator _intelligence;
-  late final LocalStatevectorBackend _statevector;
-  late final LocalDensityMatrixBackend _densityMatrix;
-  late final QuantumProviderRegistry _providers;
-  late final CircuitDocumentSynchronizer _circuitSync;
-  late final BasicTranspilerInspector _transpiler;
-  late final WorkspaceGraphBuilder _graphBuilder;
-  late final QuantumExecutionService _quantum;
+  late final WorkbenchProductCoordinator _product;
+  late final CommandRegistry _commands;
 
   DebugSession? _debugSession;
   StreamSubscription<String>? _debugOutputSub;
   StreamSubscription<DebugStackFrame>? _debugFrameSub;
   StreamSubscription<KetEvent>? _kernelEventSub;
-  StreamSubscription<List<ProviderSnapshot>>? _providerSub;
   String? _kernelExecutionId;
 
   @override
@@ -63,32 +56,142 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
     _intelligence = EditorIntelligenceCoordinator(
       host: const PyrightLanguageServiceHost(),
     );
-
-    const codec = OpenQasm3CodecImpl();
-    const layout = DeterministicCircuitLayoutEngine();
-    _statevector = LocalStatevectorBackend(openQasm3Codec: codec);
-    _densityMatrix = LocalDensityMatrixBackend(openQasm3Codec: codec);
-    _providers = QuantumProviderRegistry()
-      ..register(_statevector)
-      ..register(_densityMatrix);
-    _providerSub = _providers.changes.listen(_controller.setProviders);
-    _circuitSync = const CircuitDocumentSynchronizer(
-      codec: codec,
-      layoutEngine: layout,
+    _product = WorkbenchProductCoordinator(
+      controller: _controller,
+      runtime: _runtime,
     );
-    _transpiler = const BasicTranspilerInspector();
-    _graphBuilder = const WorkspaceGraphBuilder();
-    _quantum = QuantumExecutionService(
-      openQasm3Codec: codec,
-      backend: _statevector,
-      debugger: const LocalQuantumDebugger(),
-      experimentStore: FileExperimentStore(
-        Directory(p.join(Directory.current.path, '.ket', 'experiments')),
+    _commands = CommandRegistry();
+    _registerCommands();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    unawaited(_initialize());
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _product.initialize();
+      await _activateIntelligence();
+    } catch (error) {
+      _controller.setStatus('Workbench initialization degraded: $error');
+    }
+  }
+
+  void _registerCommands() {
+    _commands.register(
+      const CommandDescriptor(
+        id: 'file.open',
+        title: 'Open File',
+        category: 'File',
+        keybinding: 'Ctrl/Cmd+O',
+        keywords: <String>['browse', 'document'],
       ),
+      _openFile,
     );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'file.save',
+        title: 'Save Active File',
+        category: 'File',
+        keybinding: 'Ctrl/Cmd+S',
+      ),
+      _save,
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'run.active',
+        title: 'Run Active Document',
+        category: 'Run',
+        keybinding: 'Ctrl/Cmd+R',
+        keywords: <String>['execute', 'quantum', 'python'],
+      ),
+      _runActive,
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'debug.python',
+        title: 'Debug Python',
+        category: 'Run',
+        keybinding: 'F5',
+      ),
+      _debugPython,
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'view.terminal',
+        title: 'Show Terminal',
+        category: 'View',
+        keywords: <String>['shell', 'console'],
+      ),
+      () => _controller.showBottomPanel(WorkbenchBottomPanel.terminal),
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'view.search',
+        title: 'Project Search',
+        category: 'View',
+        keybinding: 'Ctrl/Cmd+Shift+F',
+      ),
+      () => _controller.selectSection(WorkbenchSection.search),
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'view.experiments',
+        title: 'Experiment Lab',
+        category: 'Quantum',
+        keywords: <String>['history', 'compare', 'reproducibility'],
+      ),
+      () {
+        _controller.selectSection(WorkbenchSection.experiments);
+        unawaited(_product.refreshExperiments());
+      },
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'providers.refresh',
+        title: 'Refresh Quantum Providers',
+        category: 'Quantum',
+        keywords: <String>['qiskit', 'pennylane', 'cirq'],
+      ),
+      _product.refreshProviders,
+    );
+    _commands.register(
+      const CommandDescriptor(
+        id: 'view.inspector',
+        title: 'Toggle Quantum Inspector',
+        category: 'View',
+      ),
+      _controller.toggleInspector,
+    );
+  }
 
-    unawaited(_runtime.initialize());
-    unawaited(_providers.refreshAll().then(_controller.setProviders));
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent || !mounted) return false;
+    final keyboard = HardwareKeyboard.instance;
+    final primary = Platform.isMacOS ? keyboard.isMetaPressed : keyboard.isControlPressed;
+    if (primary && keyboard.isShiftPressed && event.logicalKey == LogicalKeyboardKey.keyP) {
+      unawaited(showKetCommandPalette(context, _commands));
+      return true;
+    }
+    if (primary && keyboard.isShiftPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
+      _controller.selectSection(WorkbenchSection.search);
+      return true;
+    }
+    if (primary && event.logicalKey == LogicalKeyboardKey.keyS) {
+      unawaited(_save());
+      return true;
+    }
+    if (primary && event.logicalKey == LogicalKeyboardKey.keyO) {
+      unawaited(_openFile());
+      return true;
+    }
+    if (primary && event.logicalKey == LogicalKeyboardKey.keyR) {
+      unawaited(_runActive());
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f5) {
+      unawaited(_debugPython());
+      return true;
+    }
+    return false;
   }
 
   Future<void> _activateIntelligence() async {
@@ -116,9 +219,22 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
     if (path == null) return;
     try {
       await _controller.openFile(path);
+      _controller.selectSection(WorkbenchSection.explorer);
       await _activateIntelligence();
     } catch (error) {
       _controller.setStatus('Open failed: $error');
+    }
+  }
+
+  Future<void> _openSearchMatch(ProjectSearchMatch match) async {
+    try {
+      final path = p.join(Directory.current.absolute.path, match.path);
+      await _controller.openFile(path);
+      _controller.selectSection(WorkbenchSection.explorer);
+      await _activateIntelligence();
+      _controller.setStatus('${match.path}:${match.line}:${match.column}');
+    } catch (error) {
+      _controller.setStatus('Search result open failed: $error');
     }
   }
 
@@ -140,10 +256,14 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
   }
 
   Future<void> _runActive() async {
-    final document = _controller.activeDocument;
     if (_controller.running) return;
+    final document = _controller.activeDocument;
     if (document.languageId == 'openqasm3') {
-      await _runQuantum();
+      try {
+        await _product.runQuantum();
+      } catch (_) {
+        // Product coordinator already publishes a user-facing failure state.
+      }
     } else if (document.languageId == 'python') {
       await _runPython();
     } else {
@@ -151,66 +271,9 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
     }
   }
 
-  Future<void> _runQuantum() async {
-    _controller.setRunning(true, status: 'Running exact local quantum simulation…');
-    _controller.showBottomPanel(WorkbenchBottomPanel.output);
-    try {
-      final source = _controller.activeDocument.text;
-      final sync = _circuitSync.parse(source);
-      final report = await _quantum.runOpenQasm(
-        source: source,
-        projectId: Directory.current.absolute.path,
-        shots: 1024,
-        seed: 7,
-      );
-      final transpilation = await _transpiler.transpile(
-        circuit: sync.circuit,
-        backendId: report.job.backendId,
-        targetId: report.job.targetId,
-      );
-      final graph = _graphBuilder.build(
-        sourceLabel: _controller.activeDocument.title,
-        circuit: sync.circuit,
-        backendId: report.job.backendId,
-        targetId: report.job.targetId,
-        result: report.result,
-        experiment: report.record,
-        transpilation: transpilation,
-      );
-      _controller.setQuantumExecution(
-        result: report.result,
-        debugSnapshot: report.debugSnapshot,
-        experiment: report.record,
-        circuit: sync.circuit,
-        diagram: sync.diagram,
-        transpilation: transpilation,
-        workspaceGraph: graph,
-      );
-      _controller.appendOutput(
-        '[quantum] ${report.job.backendId}/${report.job.targetId} completed: '
-        '${report.result.counts} • compiler ${transpilation.input.operations.length}→'
-        '${transpilation.output.operations.length} ops',
-      );
-      _controller.setRunning(false, status: 'Quantum execution + compiler trace complete.');
-    } catch (error) {
-      _controller.appendOutput('[quantum error] $error');
-      _controller.setRunning(false, status: 'Quantum execution failed.');
-    }
-  }
-
   void _applyCircuitEdit(CircuitEdit edit) {
-    final document = _controller.activeDocument;
-    if (document.languageId != 'openqasm3') {
-      _controller.setStatus('Visual circuit edits require an OpenQASM document.');
-      return;
-    }
     try {
-      final updated = _circuitSync.apply(document.text, edit);
-      _controller.setCircuitPreview(
-        source: updated.source,
-        circuit: updated.circuit,
-        diagram: updated.diagram,
-      );
+      _product.applyCircuitEdit(edit);
     } catch (error) {
       _controller.setStatus('Circuit edit rejected: $error');
     }
@@ -303,8 +366,8 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
   Future<void> _stepQuantum({required bool forward}) async {
     try {
       final snapshot = forward
-          ? await _quantum.stepForward()
-          : await _quantum.stepBackward();
+          ? await _product.quantum.stepForward()
+          : await _product.quantum.stepBackward();
       _controller.setQuantumDebugSnapshot(snapshot);
     } catch (error) {
       _controller.setStatus('Quantum debugger: $error');
@@ -338,6 +401,7 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
                   onSave: _save,
                   onRun: _runActive,
                   onDebugPython: _debugPython,
+                  onCommands: () => showKetCommandPalette(context, _commands),
                 ),
                 const Divider(size: 1),
                 Expanded(
@@ -357,17 +421,24 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
                             _intelligence.scheduleChange(_controller.activeDocument);
                           },
                           onCircuitEdit: _applyCircuitEdit,
+                          onSearch: _product.searchProject,
+                          onOpenSearchMatch: _openSearchMatch,
+                          onRefreshExperiments: _product.refreshExperiments,
+                          onCompareExperiments: _product.compareExperiments,
                         ),
                       ),
                       if (_controller.inspectorVisible) ...<Widget>[
                         const VerticalDivider(size: 1),
                         SizedBox(
-                          width: 300,
+                          width: 320,
                           child: _Inspector(
                             controller: _controller,
                             runtime: _runtime,
+                            noisePresets: _product.noisePresets,
                             onStepBack: () => _stepQuantum(forward: false),
                             onStepForward: () => _stepQuantum(forward: true),
+                            onTarget: _controller.setExecutionTarget,
+                            onNoisePreset: _controller.setNoisePreset,
                           ),
                         ),
                       ],
@@ -386,12 +457,11 @@ final class _KetWorkbenchState extends State<KetWorkbench> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     unawaited(_kernelEventSub?.cancel() ?? Future<void>.value());
-    unawaited(_providerSub?.cancel() ?? Future<void>.value());
     unawaited(_disposeDebugSession());
     unawaited(_intelligence.dispose());
-    unawaited(_quantum.dispose());
-    unawaited(_providers.dispose());
+    unawaited(_product.dispose());
     unawaited(_runtime.dispose());
     _controller.dispose();
     super.dispose();
@@ -405,6 +475,7 @@ final class _TitleBar extends StatelessWidget {
     required this.onSave,
     required this.onRun,
     required this.onDebugPython,
+    required this.onCommands,
   });
 
   final WorkbenchController controller;
@@ -412,6 +483,7 @@ final class _TitleBar extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onRun;
   final VoidCallback onDebugPython;
+  final VoidCallback onCommands;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -433,6 +505,8 @@ final class _TitleBar extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             Button(onPressed: onDebugPython, child: const Text('Debug Python')),
+            const SizedBox(width: 4),
+            Button(onPressed: onCommands, child: const Text('Commands')),
             const SizedBox(width: 12),
             Expanded(
               child: DragToMoveArea(
@@ -552,16 +626,17 @@ final class _Sidebar extends StatelessWidget {
       );
     }
     final content = switch (controller.section) {
-      WorkbenchSection.search => 'Project search is ready to bind LSP workspace symbols.',
+      WorkbenchSection.search => controller.searchQuery.isEmpty
+          ? 'Project-wide text search runs in a worker isolate.'
+          : '${controller.searchResults.length} matches for ${controller.searchQuery}',
       WorkbenchSection.quantum => controller.quantumCircuit == null
           ? 'Run an OpenQASM 3 document to build circuit, compiler and debugger state.'
           : '${controller.quantumCircuit!.qubitCount} qubits • '
             '${controller.circuitDiagram?.depth ?? 0} depth • '
             '${controller.transpilationTrace?.stages.length ?? 0} compiler passes',
-      WorkbenchSection.experiments => controller.lastExperiment == null
-          ? 'No reproducible experiment has been persisted yet.'
-          : '${controller.lastExperiment!.id}\n'
-            '${controller.workspaceGraph?.nodes.length ?? 0} graph nodes',
+      WorkbenchSection.experiments => controller.experimentHistory.isEmpty
+          ? 'No reproducible experiments yet.'
+          : '${controller.experimentHistory.length} persisted experiments',
       WorkbenchSection.extensions => controller.providers.isEmpty
           ? 'No providers registered.'
           : controller.providers
@@ -615,12 +690,20 @@ final class _CenterWorkspace extends StatelessWidget {
     required this.runtime,
     required this.onChanged,
     required this.onCircuitEdit,
+    required this.onSearch,
+    required this.onOpenSearchMatch,
+    required this.onRefreshExperiments,
+    required this.onCompareExperiments,
   });
 
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
   final ValueChanged<String> onChanged;
   final ValueChanged<CircuitEdit> onCircuitEdit;
+  final Future<void> Function(String query) onSearch;
+  final Future<void> Function(ProjectSearchMatch match) onOpenSearchMatch;
+  final Future<void> Function() onRefreshExperiments;
+  final Future<void> Function(String leftId, String rightId) onCompareExperiments;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -667,9 +750,7 @@ final class _CenterWorkspace extends StatelessWidget {
                           ? WorkbenchSection.explorer
                           : WorkbenchSection.quantum,
                     ),
-                    child: Text(
-                      controller.section == WorkbenchSection.quantum ? 'Code' : 'Circuit',
-                    ),
+                    child: Text(controller.section == WorkbenchSection.quantum ? 'Code' : 'Circuit'),
                   ),
                 IconButton(
                   icon: Icon(
@@ -682,28 +763,38 @@ final class _CenterWorkspace extends StatelessWidget {
             ),
           ),
           const Divider(size: 1),
-          Expanded(
-            child: controller.section == WorkbenchSection.quantum &&
-                    controller.circuitDiagram != null
-                ? QuantumWorkspaceSurface(
-                    controller: controller,
-                    onEdit: onCircuitEdit,
-                  )
-                : CodeEditorSurface(
-                    key: ValueKey<String>(controller.activeDocument.id),
-                    document: controller.activeDocument,
-                    onChanged: onChanged,
-                  ),
-          ),
+          Expanded(child: _surface()),
           if (controller.bottomVisible) ...<Widget>[
             const Divider(size: 1),
-            SizedBox(
-              height: 270,
-              child: _BottomPanel(controller: controller, runtime: runtime),
-            ),
+            SizedBox(height: 270, child: _BottomPanel(controller: controller, runtime: runtime)),
           ],
         ],
       );
+
+  Widget _surface() {
+    if (controller.section == WorkbenchSection.quantum && controller.circuitDiagram != null) {
+      return QuantumWorkspaceSurface(controller: controller, onEdit: onCircuitEdit);
+    }
+    if (controller.section == WorkbenchSection.experiments) {
+      return ExperimentLabSurface(
+        controller: controller,
+        onRefresh: onRefreshExperiments,
+        onCompare: onCompareExperiments,
+      );
+    }
+    if (controller.section == WorkbenchSection.search) {
+      return ProjectSearchSurface(
+        controller: controller,
+        onSearch: onSearch,
+        onOpenMatch: onOpenSearchMatch,
+      );
+    }
+    return CodeEditorSurface(
+      key: ValueKey<String>(controller.activeDocument.id),
+      document: controller.activeDocument,
+      onChanged: onChanged,
+    );
+  }
 }
 
 final class _BottomPanel extends StatelessWidget {
@@ -831,14 +922,20 @@ final class _Inspector extends StatelessWidget {
   const _Inspector({
     required this.controller,
     required this.runtime,
+    required this.noisePresets,
     required this.onStepBack,
     required this.onStepForward,
+    required this.onTarget,
+    required this.onNoisePreset,
   });
 
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
+  final List<NoisePreset> noisePresets;
   final VoidCallback onStepBack;
   final VoidCallback onStepForward;
+  final void Function(String backendId, String targetId) onTarget;
+  final ValueChanged<String> onNoisePreset;
 
   @override
   Widget build(BuildContext context) {
@@ -858,11 +955,61 @@ final class _Inspector extends StatelessWidget {
               _InspectorCard(
                 title: 'Providers',
                 value: '$readyProviders/${controller.providers.length} ready',
-                detail: controller.providers.isEmpty
-                    ? 'Registry initializing'
-                    : controller.providers.map((item) => item.displayName).join(' • '),
+                detail: '${controller.selectedBackendId}/${controller.selectedTargetId}',
               ),
               const SizedBox(height: 8),
+              for (final provider in controller.providers) ...<Widget>[
+                Text(
+                  '${provider.displayName} • ${provider.health.name}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: provider.health == ProviderHealth.ready
+                        ? const Color(0xFF73D9A3)
+                        : const Color(0xFF8D99A7),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                for (final target in provider.targets)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: controller.selectedBackendId == provider.backendId &&
+                            controller.selectedTargetId == target.id
+                        ? FilledButton(
+                            onPressed: () => onTarget(provider.backendId, target.id),
+                            child: Text(target.name),
+                          )
+                        : Button(
+                            onPressed: provider.health == ProviderHealth.ready
+                                ? () => onTarget(provider.backendId, target.id)
+                                : null,
+                            child: Text(target.name),
+                          ),
+                  ),
+                if (provider.errorMessage != null)
+                  Text(
+                    provider.errorMessage!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 9, color: Color(0xFFE08A8A)),
+                  ),
+                const SizedBox(height: 8),
+              ],
+              if (controller.selectedBackendId == 'ket.local.density-matrix' &&
+                  noisePresets.isNotEmpty) ...<Widget>[
+                const Text('NOISE PRESET', style: TextStyle(fontSize: 9, color: Color(0xFF718091))),
+                const SizedBox(height: 5),
+                ComboBox<String>(
+                  value: controller.noisePresetId,
+                  items: <ComboBoxItem<String>>[
+                    for (final preset in noisePresets)
+                      ComboBoxItem<String>(value: preset.id, child: Text(preset.name)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) onNoisePreset(value);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
               _InspectorCard(
                 title: 'Circuit / Compiler',
                 value: controller.quantumCircuit == null
@@ -1016,5 +1163,3 @@ final class _StatusBar extends StatelessWidget {
         ),
       );
 }
-
-void unawaited(Future<void> future) {}
