@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -25,6 +26,7 @@ class PtySession {
   virtual ~PtySession() = default;
 
   [[nodiscard]] virtual std::string id() const = 0;
+  virtual std::size_t read(std::span<std::uint8_t> buffer) = 0;
   virtual void write(std::span<const std::uint8_t> bytes) = 0;
   virtual void resize(TerminalSize size) = 0;
   virtual void interrupt() = 0;
