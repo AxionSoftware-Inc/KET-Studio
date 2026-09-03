@@ -1,10 +1,26 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
+import '../../application/editor/editor_intelligence_coordinator.dart';
+import '../../application/quantum/quantum_execution_service.dart';
 import '../../application/runtime/runtime_supervisor.dart';
-import '../../application/workbench/workbench_controller.dart';
+import '../../application/workbench_controller.dart';
+import '../../core/debug/debug_adapter.dart';
+import '../../core/kernel/kernel.dart';
+import '../../core/language/language_services.dart';
+import '../../core/protocol/ket_event.dart';
+import '../../core/quantum/quantum_debugger.dart';
+import '../../infrastructure/debug/dap_stdio_debug_adapter.dart';
+import '../../infrastructure/experiments/file_experiment_store.dart';
+import '../../infrastructure/language/pyright_language_service.dart';
+import '../../infrastructure/quantum/local_statevector_backend.dart';
+import '../../infrastructure/quantum/openqasm3_codec.dart';
+import '../editor/code_editor_surface.dart';
 import '../terminal/terminal_panel.dart';
 
 final class KetWorkbench extends StatefulWidget {
@@ -17,318 +33,465 @@ final class KetWorkbench extends StatefulWidget {
 final class _KetWorkbenchState extends State<KetWorkbench> {
   late final WorkbenchController _controller;
   late final RuntimeSupervisor _runtime;
+  late final EditorIntelligenceCoordinator _intelligence;
+  late final QuantumExecutionService _quantum;
+  DebugSession? _debugSession;
+  StreamSubscription<String>? _debugOutputSub;
+  StreamSubscription<DebugStackFrame>? _debugFrameSub;
+  StreamSubscription<KetEvent>? _kernelEventSub;
+  String? _kernelExecutionId;
 
   @override
   void initState() {
     super.initState();
     _controller = WorkbenchController();
     _runtime = RuntimeSupervisor();
+    _intelligence = EditorIntelligenceCoordinator(
+      host: const PyrightLanguageServiceHost(),
+    );
+    _quantum = QuantumExecutionService(
+      openQasm3Codec: const OpenQasm3CodecImpl(),
+      backend: LocalStatevectorBackend(),
+      debugger: const LocalQuantumDebugger(),
+      experimentStore: FileExperimentStore(
+        Directory(p.join(Directory.current.path, '.ket', 'experiments')),
+      ),
+    );
     unawaited(_runtime.initialize());
+  }
+
+  Future<void> _activateIntelligence() async {
+    final document = _controller.activeDocument;
+    if (document.languageId != 'python' || document.uri == null) {
+      _controller.clearDiagnostics();
+      return;
+    }
+    await _intelligence.activate(
+      document,
+      onDiagnostics: _controller.setDiagnostics,
+    );
+    if (!_intelligence.available) {
+      _controller.setStatus(_intelligence.unavailableReason);
+    }
+  }
+
+  Future<void> _openFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['py', 'qasm', 'json', 'txt'],
+      allowMultiple: false,
+    );
+    final path = result?.files.single.path;
+    if (path == null) return;
+    try {
+      await _controller.openFile(path);
+      await _activateIntelligence();
+    } catch (error) {
+      _controller.setStatus('Open failed: $error');
+    }
+  }
+
+  Future<void> _save() async {
+    try {
+      var path = _controller.activeDocument.path;
+      if (path == null) {
+        path = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save ${_controller.activeDocument.title}',
+          fileName: _controller.activeDocument.title,
+        );
+      }
+      if (path == null) return;
+      await _controller.saveActive(path: path);
+      await _activateIntelligence();
+    } catch (error) {
+      _controller.setStatus('Save failed: $error');
+    }
+  }
+
+  Future<void> _runActive() async {
+    final document = _controller.activeDocument;
+    if (_controller.running) return;
+    if (document.languageId == 'openqasm3') {
+      await _runQuantum();
+      return;
+    }
+    if (document.languageId == 'python') {
+      await _runPython();
+      return;
+    }
+    _controller.setStatus('No runner is registered for ${document.languageId}.');
+  }
+
+  Future<void> _runQuantum() async {
+    _controller.setRunning(true, status: 'Running exact local quantum simulation…');
+    _controller.showBottomPanel(WorkbenchBottomPanel.output);
+    try {
+      final report = await _quantum.runOpenQasm(
+        source: _controller.activeDocument.text,
+        projectId: Directory.current.absolute.path,
+        shots: 1024,
+        seed: 7,
+      );
+      _controller.setQuantumExecution(
+        result: report.result,
+        debugSnapshot: report.debugSnapshot,
+        experiment: report.record,
+      );
+      _controller.appendOutput(
+        '[quantum] ${report.job.backendId}/${report.job.targetId} '
+        'completed: ${report.result.counts}',
+      );
+      _controller.setRunning(false, status: 'Quantum execution complete.');
+    } catch (error) {
+      _controller.appendOutput('[quantum error] $error');
+      _controller.setRunning(false, status: 'Quantum execution failed.');
+    }
+  }
+
+  Future<void> _ensureKernelEvents(KernelSession kernel) async {
+    if (_kernelEventSub != null) return;
+    _kernelEventSub = kernel.events.listen((event) {
+      final executionId = event.payload['executionId'];
+      if (_kernelExecutionId != null && executionId != null && executionId != _kernelExecutionId) {
+        return;
+      }
+      switch (event.kind) {
+        case KetEventKind.stdout:
+        case KetEventKind.stderr:
+          final text = event.payload['text'];
+          if (text != null) _controller.appendOutput('$text'.trimRight());
+          break;
+        case KetEventKind.error:
+          _controller.appendOutput('[python error] ${event.payload['message'] ?? event.payload}');
+          _controller.setRunning(false, status: 'Python execution failed.');
+          break;
+        case KetEventKind.lifecycle:
+          if (event.payload['state'] == 'idle' && _kernelExecutionId != null) {
+            _controller.setRunning(false, status: 'Python execution complete.');
+            _kernelExecutionId = null;
+          }
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  Future<void> _runPython() async {
+    _controller.setRunning(true, status: 'Running in persistent Python kernel…');
+    _controller.showBottomPanel(WorkbenchBottomPanel.output);
+    try {
+      final kernel = await _runtime.ensureKernel(
+        workingDirectory: _controller.activeDocument.path == null
+            ? Directory.current.path
+            : File(_controller.activeDocument.path!).parent.path,
+      );
+      await _ensureKernelEvents(kernel);
+      final executionId = 'run-${DateTime.now().microsecondsSinceEpoch}';
+      _kernelExecutionId = executionId;
+      await kernel.execute(KernelExecutionRequest(
+        code: _controller.activeDocument.text,
+        executionId: executionId,
+        fileName: _controller.activeDocument.path,
+      ));
+    } catch (error) {
+      _kernelExecutionId = null;
+      _controller.appendOutput('[kernel error] $error');
+      _controller.setRunning(false, status: 'Python kernel failed.');
+    }
+  }
+
+  Future<void> _debugPython() async {
+    if (_controller.activeDocument.languageId != 'python') {
+      _controller.setStatus('Python debugger requires a Python document.');
+      return;
+    }
+    _controller.showBottomPanel(WorkbenchBottomPanel.debugConsole);
+    _controller.setRunning(true, status: 'Starting debugpy adapter…');
+    try {
+      await _disposeDebugSession();
+      final program = await _controller.materializePythonScratch();
+      final paths = _runtime.paths ?? (await _runtime.initialize()).paths;
+      if (paths == null) throw StateError('Runtime paths are unavailable.');
+      final session = await const DapStdioDebugAdapterHost().launch(
+        adapterExecutable: paths.pythonInterpreter,
+        adapterArguments: const <String>['-m', 'debugpy.adapter'],
+        program: program,
+        workingDirectory: File(program).parent.path,
+      );
+      _debugSession = session;
+      _debugOutputSub = session.output.listen(_controller.appendOutput);
+      _debugFrameSub = session.stoppedFrames.listen((frame) {
+        _controller.setDebugFrames(<DebugStackFrame>[frame]);
+        _controller.setRunning(false, status: 'Debugger stopped at line ${frame.line}.');
+      });
+      _controller.setStatus('debugpy session started.');
+    } catch (error) {
+      _controller.appendOutput('[debugger error] $error');
+      _controller.setRunning(false, status: 'debugpy unavailable or failed.');
+    }
+  }
+
+  Future<void> _stepQuantum({required bool forward}) async {
+    try {
+      final snapshot = forward
+          ? await _quantum.stepForward()
+          : await _quantum.stepBackward();
+      _controller.setQuantumDebugSnapshot(snapshot);
+    } catch (error) {
+      _controller.setStatus('Quantum debugger: $error');
+    }
+  }
+
+  Future<void> _disposeDebugSession() async {
+    await _debugOutputSub?.cancel();
+    await _debugFrameSub?.cancel();
+    _debugOutputSub = null;
+    _debugFrameSub = null;
+    final session = _debugSession;
+    _debugSession = null;
+    if (session != null) await session.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _controller,
-      builder: (context, _) {
-        return NavigationView(
-          content: ScaffoldPage(
-            padding: EdgeInsets.zero,
-            content: ColoredBox(
-              color: const Color(0xFF0B0F14),
-              child: Column(
-                children: <Widget>[
-                  _TitleBar(controller: _controller),
-                  const Divider(size: 1),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _ActivityBar(controller: _controller),
+      builder: (context, _) => NavigationView(
+        content: ScaffoldPage(
+          padding: EdgeInsets.zero,
+          content: ColoredBox(
+            color: const Color(0xFF0B0F14),
+            child: Column(
+              children: <Widget>[
+                _TitleBar(
+                  controller: _controller,
+                  onOpen: _openFile,
+                  onSave: _save,
+                  onRun: _runActive,
+                  onDebugPython: _debugPython,
+                ),
+                const Divider(size: 1),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _ActivityBar(controller: _controller),
+                      const VerticalDivider(size: 1),
+                      SizedBox(width: 238, child: _Sidebar(controller: _controller)),
+                      const VerticalDivider(size: 1),
+                      Expanded(
+                        child: _CenterWorkspace(
+                          controller: _controller,
+                          runtime: _runtime,
+                          onChanged: (value) {
+                            _controller.updateActiveText(value);
+                            _intelligence.scheduleChange(_controller.activeDocument);
+                          },
+                        ),
+                      ),
+                      if (_controller.inspectorVisible) ...<Widget>[
                         const VerticalDivider(size: 1),
                         SizedBox(
-                          width: 238,
-                          child: _Sidebar(controller: _controller),
-                        ),
-                        const VerticalDivider(size: 1),
-                        Expanded(
-                          child: _CenterWorkspace(
+                          width: 300,
+                          child: _Inspector(
                             controller: _controller,
                             runtime: _runtime,
+                            onStepBack: () => _stepQuantum(forward: false),
+                            onStepForward: () => _stepQuantum(forward: true),
                           ),
                         ),
-                        if (_controller.inspectorVisible) ...<Widget>[
-                          const VerticalDivider(size: 1),
-                          SizedBox(
-                            width: 286,
-                            child: _Inspector(runtime: _runtime),
-                          ),
-                        ],
                       ],
-                    ),
+                    ],
                   ),
-                  const Divider(size: 1),
-                  _StatusBar(runtime: _runtime),
-                ],
-              ),
+                ),
+                const Divider(size: 1),
+                _StatusBar(controller: _controller, runtime: _runtime),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    unawaited(_kernelEventSub?.cancel() ?? Future<void>.value());
+    unawaited(_disposeDebugSession());
+    unawaited(_intelligence.dispose());
+    unawaited(_quantum.dispose());
     unawaited(_runtime.dispose());
+    _controller.dispose();
     super.dispose();
   }
 }
 
 final class _TitleBar extends StatelessWidget {
-  const _TitleBar({required this.controller});
+  const _TitleBar({
+    required this.controller,
+    required this.onOpen,
+    required this.onSave,
+    required this.onRun,
+    required this.onDebugPython,
+  });
 
   final WorkbenchController controller;
+  final VoidCallback onOpen;
+  final VoidCallback onSave;
+  final VoidCallback onRun;
+  final VoidCallback onDebugPython;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: Row(
-        children: <Widget>[
-          const SizedBox(width: 12),
-          const Icon(FluentIcons.processing, size: 16),
-          const SizedBox(width: 9),
-          const Text(
-            'KET Studio',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
-          const SizedBox(width: 18),
-          Button(
-            onPressed: () {},
-            child: const Text('File', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 4),
-          Button(
-            onPressed: () {},
-            child: const Text('Run', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 4),
-          Button(
-            onPressed: () {},
-            child: const Text('Quantum', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DragToMoveArea(
-              child: Center(
-                child: Container(
-                  width: 420,
-                  height: 27,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111820),
-                    borderRadius: BorderRadius.circular(5),
-                    border: Border.all(color: const Color(0xFF26313D)),
-                  ),
-                  child: const Text(
-                    'KET Studio v0.3  •  Quantum Engineering Workbench',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF9CA9B8)),
+  Widget build(BuildContext context) => SizedBox(
+        height: 42,
+        child: Row(
+          children: <Widget>[
+            const SizedBox(width: 12),
+            const Icon(FluentIcons.processing, size: 16),
+            const SizedBox(width: 8),
+            const Text('KET Studio', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(width: 14),
+            Button(onPressed: onOpen, child: const Text('Open')),
+            const SizedBox(width: 4),
+            Button(onPressed: onSave, child: const Text('Save')),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: controller.running ? null : onRun,
+              child: Text(controller.running ? 'Running…' : 'Run'),
+            ),
+            const SizedBox(width: 4),
+            Button(onPressed: onDebugPython, child: const Text('Debug Python')),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DragToMoveArea(
+                child: Center(
+                  child: Text(
+                    '${controller.activeDocument.title}${controller.activeDocument.isDirty ? ' •' : ''}  —  v0.3',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF8D99A7)),
                   ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(FluentIcons.command_prompt, size: 15),
-            onPressed: () => controller.showBottomPanel(
-              WorkbenchBottomPanel.terminal,
+            IconButton(
+              icon: const Icon(FluentIcons.command_prompt, size: 15),
+              onPressed: () => controller.showBottomPanel(WorkbenchBottomPanel.terminal),
             ),
-          ),
-          IconButton(
-            icon: const Icon(FluentIcons.side_panel, size: 15),
-            onPressed: controller.toggleInspector,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
+            IconButton(
+              icon: const Icon(FluentIcons.side_panel, size: 15),
+              onPressed: controller.toggleInspector,
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      );
 }
 
 final class _ActivityBar extends StatelessWidget {
   const _ActivityBar({required this.controller});
-
   final WorkbenchController controller;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 50,
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 6),
-          _ActivityButton(
-            icon: FluentIcons.folder,
-            selected: controller.section == WorkbenchSection.explorer,
-            onPressed: () => controller.selectSection(WorkbenchSection.explorer),
-          ),
-          _ActivityButton(
-            icon: FluentIcons.search,
-            selected: controller.section == WorkbenchSection.search,
-            onPressed: () => controller.selectSection(WorkbenchSection.search),
-          ),
-          _ActivityButton(
-            icon: FluentIcons.processing,
-            selected: controller.section == WorkbenchSection.quantum,
-            onPressed: () => controller.selectSection(WorkbenchSection.quantum),
-          ),
-          _ActivityButton(
-            icon: FluentIcons.history,
-            selected: controller.section == WorkbenchSection.experiments,
-            onPressed: () => controller.selectSection(WorkbenchSection.experiments),
-          ),
-          _ActivityButton(
-            icon: FluentIcons.plug,
-            selected: controller.section == WorkbenchSection.extensions,
-            onPressed: () => controller.selectSection(WorkbenchSection.extensions),
-          ),
-          const Spacer(),
-          _ActivityButton(
-            icon: FluentIcons.settings,
-            selected: false,
-            onPressed: () {},
-          ),
-          const SizedBox(height: 6),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+        width: 50,
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: 6),
+            for (final item in <(WorkbenchSection, IconData)>[
+              (WorkbenchSection.explorer, FluentIcons.folder),
+              (WorkbenchSection.search, FluentIcons.search),
+              (WorkbenchSection.quantum, FluentIcons.processing),
+              (WorkbenchSection.experiments, FluentIcons.history),
+              (WorkbenchSection.extensions, FluentIcons.plug),
+            ])
+              _ActivityButton(
+                icon: item.$2,
+                selected: controller.section == item.$1,
+                onPressed: () => controller.selectSection(item.$1),
+              ),
+            const Spacer(),
+            _ActivityButton(icon: FluentIcons.settings, selected: false, onPressed: () {}),
+            const SizedBox(height: 6),
+          ],
+        ),
+      );
 }
 
 final class _ActivityButton extends StatelessWidget {
-  const _ActivityButton({
-    required this.icon,
-    required this.selected,
-    required this.onPressed,
-  });
-
+  const _ActivityButton({required this.icon, required this.selected, required this.onPressed});
   final IconData icon;
   final bool selected;
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 50,
-      height: 48,
-      child: Stack(
-        children: <Widget>[
-          Center(
-            child: IconButton(
-              icon: Icon(
-                icon,
-                size: 21,
-                color: selected
-                    ? const Color(0xFFE6EEF8)
-                    : const Color(0xFF7F8A96),
-              ),
-              onPressed: onPressed,
-            ),
-          ),
-          if (selected)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: 2,
-                height: 28,
-                color: const Color(0xFF4EA1FF),
+  Widget build(BuildContext context) => SizedBox(
+        width: 50,
+        height: 48,
+        child: Stack(
+          children: <Widget>[
+            Center(
+              child: IconButton(
+                icon: Icon(icon, size: 21, color: selected ? const Color(0xFFE6EEF8) : const Color(0xFF7F8A96)),
+                onPressed: onPressed,
               ),
             ),
-        ],
-      ),
-    );
-  }
+            if (selected)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(width: 2, height: 28, color: const Color(0xFF4EA1FF)),
+              ),
+          ],
+        ),
+      );
 }
 
 final class _Sidebar extends StatelessWidget {
   const _Sidebar({required this.controller});
-
   final WorkbenchController controller;
 
   @override
   Widget build(BuildContext context) {
-    switch (controller.section) {
-      case WorkbenchSection.explorer:
-        return _Explorer(controller: controller);
-      case WorkbenchSection.search:
-        return const _SimpleSidebar(
-          title: 'SEARCH',
-          message: 'Workspace search will be backed by indexed project symbols.',
-        );
-      case WorkbenchSection.quantum:
-        return const _SimpleSidebar(
-          title: 'QUANTUM',
-          message: 'Circuits, backends, transpilation and debugger sessions.',
-        );
-      case WorkbenchSection.experiments:
-        return const _SimpleSidebar(
-          title: 'EXPERIMENTS',
-          message: 'Reproducible runs, parameters, artifacts and remote jobs.',
-        );
-      case WorkbenchSection.extensions:
-        return const _SimpleSidebar(
-          title: 'EXTENSIONS',
-          message: 'Versioned KET plugins and provider adapters.',
-        );
+    if (controller.section == WorkbenchSection.explorer) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const _SidebarHeader('EXPLORER'),
+          for (final document in controller.documents)
+            GestureDetector(
+              onTap: () => controller.activateDocument(document.id),
+              child: Container(
+                height: 30,
+                color: document.id == controller.activeDocument.id ? const Color(0xFF18212B) : Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${document.isDirty ? '● ' : ''}${document.title}',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      );
     }
-  }
-}
-
-final class _Explorer extends StatelessWidget {
-  const _Explorer({required this.controller});
-
-  final WorkbenchController controller;
-
-  @override
-  Widget build(BuildContext context) {
+    final content = switch (controller.section) {
+      WorkbenchSection.search => 'Indexed project search joins LSP symbols in the next compiler milestone.',
+      WorkbenchSection.quantum => controller.quantumResult == null
+          ? 'Run an OpenQASM 3 document to create a local exact simulation and debugger session.'
+          : 'Last counts: ${controller.quantumResult!.counts}',
+      WorkbenchSection.experiments => controller.lastExperiment == null
+          ? 'No reproducible experiment has been persisted yet.'
+          : '${controller.lastExperiment!.id}\n${controller.lastExperiment!.createdAt.toLocal()}',
+      WorkbenchSection.extensions => 'Provider, simulator and analysis plugins use the versioned KET plugin boundary.',
+      WorkbenchSection.explorer => '',
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const _SidebarHeader('EXPLORER'),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(12, 10, 12, 7),
-          child: Text(
-            'KET-QUANTUM-LAB',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ),
-        _FileRow(
-          name: 'bell_state.py',
-          active: controller.activeDocument == 'bell_state.py',
-          onTap: () => controller.openDocument('bell_state.py'),
-        ),
-        _FileRow(
-          name: 'grover_search.py',
-          active: controller.activeDocument == 'grover_search.py',
-          onTap: () => controller.openDocument('grover_search.py'),
-        ),
-        _FileRow(
-          name: 'experiment.ket.json',
-          active: controller.activeDocument == 'experiment.ket.json',
-          onTap: () => controller.openDocument('experiment.ket.json'),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 8, 4),
-          child: Text('▾  .ket', style: TextStyle(fontSize: 12)),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(left: 32, top: 5),
-          child: Text(
-            'workspace.json',
-            style: TextStyle(fontSize: 12, color: Color(0xFF8D99A7)),
-          ),
+        _SidebarHeader(controller.section.name.toUpperCase()),
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(content, style: const TextStyle(fontSize: 12, height: 1.45, color: Color(0xFF8995A3))),
         ),
       ],
     );
@@ -337,401 +500,186 @@ final class _Explorer extends StatelessWidget {
 
 final class _SidebarHeader extends StatelessWidget {
   const _SidebarHeader(this.title);
-
   final String title;
-
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 38,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFFAAB5C2),
-              fontWeight: FontWeight.w600,
-            ),
+  Widget build(BuildContext context) => SizedBox(
+        height: 38,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFFAAB5C2), fontWeight: FontWeight.w600)),
           ),
         ),
-      ),
-    );
-  }
-}
-
-final class _SimpleSidebar extends StatelessWidget {
-  const _SimpleSidebar({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _SidebarHeader(title),
-        Padding(
-          padding: const EdgeInsets.all(14),
-          child: Text(
-            message,
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1.45,
-              color: Color(0xFF8995A3),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-final class _FileRow extends StatelessWidget {
-  const _FileRow({
-    required this.name,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String name;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 28,
-        color: active ? const Color(0xFF18212B) : Colors.transparent,
-        padding: const EdgeInsets.only(left: 22, right: 8),
-        child: Row(
-          children: <Widget>[
-            const Text(
-              '◆',
-              style: TextStyle(fontSize: 8, color: Color(0xFF4EA1FF)),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                name,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      );
 }
 
 final class _CenterWorkspace extends StatelessWidget {
-  const _CenterWorkspace({
-    required this.controller,
-    required this.runtime,
-  });
-
+  const _CenterWorkspace({required this.controller, required this.runtime, required this.onChanged});
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
+  final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        _DocumentTabs(controller: controller),
-        const Divider(size: 1),
-        const Expanded(child: _EditorSurface()),
-        if (controller.bottomVisible) ...<Widget>[
-          const Divider(size: 1),
-          SizedBox(
-            height: 270,
-            child: _BottomPanel(
-              controller: controller,
-              runtime: runtime,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-final class _DocumentTabs extends StatelessWidget {
-  const _DocumentTabs({required this.controller});
-
-  final WorkbenchController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: Row(
+  Widget build(BuildContext context) => Column(
         children: <Widget>[
-          Container(
-            width: 178,
+          SizedBox(
             height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: const BoxDecoration(
-              color: Color(0xFF10161E),
-              border: Border(
-                top: BorderSide(color: Color(0xFF4EA1FF), width: 2),
-              ),
-            ),
             child: Row(
               children: <Widget>[
-                Expanded(
-                  child: Text(
-                    controller.activeDocument,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                const Icon(FluentIcons.chrome_close, size: 10),
-              ],
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: Icon(
-              controller.bottomVisible
-                  ? FluentIcons.chevron_down
-                  : FluentIcons.chevron_up,
-              size: 12,
-            ),
-            onPressed: controller.toggleBottomPanel,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-final class _EditorSurface extends StatelessWidget {
-  const _EditorSurface();
-
-  static const String _code = '''from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2, 2)\nqc.h(0)\nqc.cx(0, 1)\nqc.measure([0, 1], [0, 1])\n\n# KET Studio v0.3 will bind this circuit to\n# the debugger, transpiler inspector and experiment timeline.\nprint(qc)''';
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = _code.split('\n');
-    return ColoredBox(
-      color: const Color(0xFF0D1218),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Container(
-            width: 48,
-            color: const Color(0xFF0B1016),
-            padding: const EdgeInsets.only(top: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                for (var i = 0; i < lines.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10, bottom: 5),
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        color: Color(0xFF46515E),
+                for (final document in controller.documents)
+                  GestureDetector(
+                    onTap: () => controller.activateDocument(document.id),
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 120, maxWidth: 190),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.centerLeft,
+                      decoration: BoxDecoration(
+                        color: document.id == controller.activeDocument.id ? const Color(0xFF10161E) : const Color(0xFF0C1117),
+                        border: Border(
+                          top: BorderSide(
+                            color: document.id == controller.activeDocument.id ? const Color(0xFF4EA1FF) : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
                       ),
+                      child: Text('${document.title}${document.isDirty ? ' •' : ''}', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
                     ),
                   ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(controller.bottomVisible ? FluentIcons.chevron_down : FluentIcons.chevron_up, size: 12),
+                  onPressed: controller.toggleBottomPanel,
+                ),
               ],
             ),
           ),
+          const Divider(size: 1),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
-              child: SelectableText(
-                _code,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  height: 1.55,
-                  color: Color(0xFFD9E2EC),
-                ),
-              ),
+            child: CodeEditorSurface(
+              key: ValueKey<String>(controller.activeDocument.id),
+              document: controller.activeDocument,
+              onChanged: onChanged,
             ),
           ),
+          if (controller.bottomVisible) ...<Widget>[
+            const Divider(size: 1),
+            SizedBox(height: 270, child: _BottomPanel(controller: controller, runtime: runtime)),
+          ],
         ],
-      ),
-    );
-  }
+      );
 }
 
 final class _BottomPanel extends StatelessWidget {
-  const _BottomPanel({
-    required this.controller,
-    required this.runtime,
-  });
-
+  const _BottomPanel({required this.controller, required this.runtime});
   final WorkbenchController controller;
   final RuntimeSupervisor runtime;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        SizedBox(
-          height: 34,
-          child: Row(
+  Widget build(BuildContext context) => Column(
+        children: <Widget>[
+          SizedBox(
+            height: 34,
+            child: Row(
+              children: <Widget>[
+                const SizedBox(width: 8),
+                for (final panel in WorkbenchBottomPanel.values)
+                  _PanelTab(
+                    label: switch (panel) {
+                      WorkbenchBottomPanel.terminal => 'TERMINAL',
+                      WorkbenchBottomPanel.problems => 'PROBLEMS (${controller.diagnostics.length})',
+                      WorkbenchBottomPanel.output => 'OUTPUT',
+                      WorkbenchBottomPanel.debugConsole => 'DEBUG CONSOLE',
+                    },
+                    selected: controller.bottomPanel == panel,
+                    onPressed: () => controller.showBottomPanel(panel),
+                  ),
+                const Spacer(),
+                IconButton(icon: const Icon(FluentIcons.chrome_close, size: 11), onPressed: controller.toggleBottomPanel),
+              ],
+            ),
+          ),
+          const Divider(size: 1),
+          Expanded(child: _content()),
+        ],
+      );
+
+  Widget _content() => switch (controller.bottomPanel) {
+        WorkbenchBottomPanel.terminal => TerminalPanel(runtime: runtime),
+        WorkbenchBottomPanel.problems => ListView.builder(
+            itemCount: controller.diagnostics.length,
+            itemBuilder: (context, index) {
+              final diagnostic = controller.diagnostics[index];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Text(
+                  '${diagnostic.severity.name.toUpperCase()}  '
+                  '${diagnostic.range.start.line + 1}:${diagnostic.range.start.character + 1}  '
+                  '${diagnostic.message}',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              );
+            },
+          ),
+        WorkbenchBottomPanel.output => ListView(
+            padding: const EdgeInsets.all(10),
             children: <Widget>[
-              const SizedBox(width: 8),
-              _PanelTab(
-                label: 'TERMINAL',
-                selected: controller.bottomPanel == WorkbenchBottomPanel.terminal,
-                onPressed: () => controller.showBottomPanel(
-                  WorkbenchBottomPanel.terminal,
-                ),
-              ),
-              _PanelTab(
-                label: 'PROBLEMS',
-                selected: controller.bottomPanel == WorkbenchBottomPanel.problems,
-                onPressed: () => controller.showBottomPanel(
-                  WorkbenchBottomPanel.problems,
-                ),
-              ),
-              _PanelTab(
-                label: 'OUTPUT',
-                selected: controller.bottomPanel == WorkbenchBottomPanel.output,
-                onPressed: () => controller.showBottomPanel(
-                  WorkbenchBottomPanel.output,
-                ),
-              ),
-              _PanelTab(
-                label: 'DEBUG CONSOLE',
-                selected: controller.bottomPanel == WorkbenchBottomPanel.debugConsole,
-                onPressed: () => controller.showBottomPanel(
-                  WorkbenchBottomPanel.debugConsole,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(FluentIcons.chrome_close, size: 11),
-                onPressed: controller.toggleBottomPanel,
-              ),
-              const SizedBox(width: 4),
+              for (final line in controller.output)
+                SelectableText(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.35)),
             ],
           ),
-        ),
-        const Divider(size: 1),
-        Expanded(child: _bottomContent()),
-      ],
-    );
-  }
-
-  Widget _bottomContent() {
-    switch (controller.bottomPanel) {
-      case WorkbenchBottomPanel.terminal:
-        return TerminalPanel(runtime: runtime);
-      case WorkbenchBottomPanel.problems:
-        return const _PanelPlaceholder(
-          icon: FluentIcons.error,
-          title: 'No diagnostics yet',
-          subtitle: 'LSP diagnostics will appear here.',
-        );
-      case WorkbenchBottomPanel.output:
-        return const _PanelPlaceholder(
-          icon: FluentIcons.info,
-          title: 'Structured Output',
-          subtitle: 'Kernel, transpiler and provider events will stream here.',
-        );
-      case WorkbenchBottomPanel.debugConsole:
-        return const _PanelPlaceholder(
-          icon: FluentIcons.bug,
-          title: 'Debug Console',
-          subtitle: 'DAP and quantum debugger evaluation will share this surface.',
-        );
-    }
-  }
+        WorkbenchBottomPanel.debugConsole => ListView(
+            padding: const EdgeInsets.all(10),
+            children: <Widget>[
+              if (controller.debugFrames.isEmpty)
+                const Text('No active Python stop frame.', style: TextStyle(fontSize: 11, color: Color(0xFF7F8A96)))
+              else
+                for (final frame in controller.debugFrames)
+                  Text('${frame.name} — ${frame.sourcePath ?? ''}:${frame.line}', style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+              const SizedBox(height: 10),
+              for (final line in controller.output.reversed.take(40).toList().reversed)
+                SelectableText(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+            ],
+          ),
+      };
 }
 
 final class _PanelTab extends StatelessWidget {
-  const _PanelTab({
-    required this.label,
-    required this.selected,
-    required this.onPressed,
-  });
-
+  const _PanelTab({required this.label, required this.selected, required this.onPressed});
   final String label;
   final bool selected;
   final VoidCallback onPressed;
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected ? const Color(0xFF4EA1FF) : Colors.transparent,
-              width: 2,
-            ),
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: selected ? const Color(0xFF4EA1FF) : Colors.transparent, width: 2)),
           ),
+          child: Text(label, style: TextStyle(fontSize: 10, color: selected ? const Color(0xFFE2EAF3) : const Color(0xFF7F8A96))),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: selected
-                ? const Color(0xFFE2EAF3)
-                : const Color(0xFF7F8A96),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-final class _PanelPlaceholder extends StatelessWidget {
-  const _PanelPlaceholder({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 24, color: const Color(0xFF536170)),
-          const SizedBox(height: 10),
-          Text(title, style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF768392)),
-          ),
-        ],
-      ),
-    );
-  }
+      );
 }
 
 final class _Inspector extends StatelessWidget {
-  const _Inspector({required this.runtime});
-
+  const _Inspector({
+    required this.controller,
+    required this.runtime,
+    required this.onStepBack,
+    required this.onStepForward,
+  });
+  final WorkbenchController controller;
   final RuntimeSupervisor runtime;
+  final VoidCallback onStepBack;
+  final VoidCallback onStepForward;
 
   @override
   Widget build(BuildContext context) {
+    final result = controller.quantumResult;
+    final debug = controller.quantumDebugSnapshot;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -741,47 +689,48 @@ final class _Inspector extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const _InspectorCard(
-                title: 'Backend',
-                value: 'Local Simulator',
-                detail: 'Provider-neutral adapter',
+              const _InspectorCard(title: 'Backend', value: 'KET Local Statevector', detail: 'Exact • isolate worker • max 16 qubits'),
+              const SizedBox(height: 8),
+              _InspectorCard(
+                title: 'Result',
+                value: result == null ? 'Not executed' : '${result.counts.values.fold<int>(0, (a, b) => a + b)} shots',
+                detail: result == null ? 'Run an OpenQASM document' : '${result.counts}',
               ),
               const SizedBox(height: 8),
-              const _InspectorCard(
-                title: 'Circuit',
-                value: '2 qubits • 3 ops',
-                detail: 'Depth 2 • Bell state',
+              _InspectorCard(
+                title: 'Debugger',
+                value: debug == null ? 'No session' : 'Operation ${debug.operationIndex}',
+                detail: debug == null
+                    ? 'State snapshots appear after execution'
+                    : 'P=${debug.probabilities} • entanglement=${debug.entanglement.isEmpty ? 0 : debug.entanglement.first.strength.toStringAsFixed(3)}',
               ),
-              const SizedBox(height: 8),
-              const _InspectorCard(
-                title: 'Experiment',
-                value: '1024 shots',
-                detail: 'Reproducibility metadata enabled',
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'RUNTIME',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Color(0xFF778492),
-                  fontWeight: FontWeight.w600,
+              if (debug != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Row(
+                  children: <Widget>[
+                    Expanded(child: Button(onPressed: onStepBack, child: const Text('← Step'))),
+                    const SizedBox(width: 6),
+                    Expanded(child: Button(onPressed: onStepForward, child: const Text('Step →'))),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 7),
+                const SizedBox(height: 10),
+                for (final qubit in debug.qubits)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      'q${qubit.index}: Bloch (${qubit.blochX.toStringAsFixed(3)}, ${qubit.blochY.toStringAsFixed(3)}, ${qubit.blochZ.toStringAsFixed(3)}) • purity ${qubit.purity.toStringAsFixed(3)}',
+                      style: const TextStyle(fontSize: 10, color: Color(0xFF8D99A7)),
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 12),
               StreamBuilder<RuntimeSnapshot>(
                 stream: runtime.snapshots,
                 initialData: runtime.snapshot,
-                builder: (context, snapshot) {
-                  final value = snapshot.data ?? runtime.snapshot;
-                  return Text(
-                    value.message,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      height: 1.45,
-                      color: Color(0xFFA6B2BF),
-                    ),
-                  );
-                },
+                builder: (context, snapshot) => Text(
+                  (snapshot.data ?? runtime.snapshot).message,
+                  style: const TextStyle(fontSize: 10, height: 1.4, color: Color(0xFF8D99A7)),
+                ),
               ),
             ],
           ),
@@ -792,103 +741,73 @@ final class _Inspector extends StatelessWidget {
 }
 
 final class _InspectorCard extends StatelessWidget {
-  const _InspectorCard({
-    required this.title,
-    required this.value,
-    required this.detail,
-  });
-
+  const _InspectorCard({required this.title, required this.value, required this.detail});
   final String title;
   final String value;
   final String detail;
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111820),
-        border: Border.all(color: const Color(0xFF222D38)),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            title,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF788593)),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            detail,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF75818E)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111820),
+          border: Border.all(color: const Color(0xFF222D38)),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(title, style: const TextStyle(fontSize: 10, color: Color(0xFF788593))),
+            const SizedBox(height: 5),
+            Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 3),
+            Text(detail, style: const TextStyle(fontSize: 10, color: Color(0xFF75818E))),
+          ],
+        ),
+      );
 }
 
 final class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.runtime});
-
+  const _StatusBar({required this.controller, required this.runtime});
+  final WorkbenchController controller;
   final RuntimeSupervisor runtime;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 24,
-      child: StreamBuilder<RuntimeSnapshot>(
-        stream: runtime.snapshots,
-        initialData: runtime.snapshot,
-        builder: (context, snapshot) {
-          final value = snapshot.data ?? runtime.snapshot;
-          final color = switch (value.health) {
-            RuntimeHealth.ready => const Color(0xFF45C486),
-            RuntimeHealth.degraded => const Color(0xFFE6A23C),
-            RuntimeHealth.failed => const Color(0xFFE05A5A),
-            _ => const Color(0xFF73808D),
-          };
-          return Row(
-            children: <Widget>[
-              const SizedBox(width: 10),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                value.health.name,
-                style: const TextStyle(fontSize: 10),
-              ),
-              const SizedBox(width: 18),
-              const Text(
-                'v0.3-production-rewrite',
-                style: TextStyle(fontSize: 10, color: Color(0xFF83909D)),
-              ),
-              const Spacer(),
-              Text(
-                '${value.terminalCount} terminal',
-                style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
-              ),
-              const SizedBox(width: 16),
-              const Text(
-                'UTF-8  •  Python  •  Quantum',
-                style: TextStyle(fontSize: 10, color: Color(0xFF83909D)),
-              ),
-              const SizedBox(width: 12),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+        height: 25,
+        child: StreamBuilder<RuntimeSnapshot>(
+          stream: runtime.snapshots,
+          initialData: runtime.snapshot,
+          builder: (context, snapshot) {
+            final value = snapshot.data ?? runtime.snapshot;
+            final color = switch (value.health) {
+              RuntimeHealth.ready => const Color(0xFF45C486),
+              RuntimeHealth.degraded => const Color(0xFFE6A23C),
+              RuntimeHealth.failed => const Color(0xFFE05A5A),
+              _ => const Color(0xFF73808D),
+            };
+            return Row(
+              children: <Widget>[
+                const SizedBox(width: 10),
+                Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                const SizedBox(width: 6),
+                Text(value.health.name, style: const TextStyle(fontSize: 10)),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    controller.statusMessage ?? value.message,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF83909D)),
+                  ),
+                ),
+                Text(controller.activeDocument.languageId, style: const TextStyle(fontSize: 10, color: Color(0xFF83909D))),
+                const SizedBox(width: 10),
+                Text('${value.terminalCount} terminal', style: const TextStyle(fontSize: 10, color: Color(0xFF83909D))),
+                const SizedBox(width: 12),
+              ],
+            );
+          },
+        ),
+      );
 }
 
 void unawaited(Future<void> future) {}
